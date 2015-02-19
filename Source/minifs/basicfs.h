@@ -68,7 +68,12 @@ namespace mfs{
 
 		// ファイルシステムが書き込み操作を行えるか
 		bool Writable(void){
-			return LoadImmediate(m_Writable);
+			return !READ_ONLY && LoadImmediate(m_Writable);
+		}
+
+		// 書き込みを禁止する
+		void ProhibitWriting(void){
+			StoreImmediate(m_Writable, false);
 		}
 
 	public:

@@ -42,9 +42,11 @@ namespace mfs{
 		// クラスタ割り当てビットマップへアクセスするためのManage_t
 		Manage_t m_AllocBitmapManage;
 
-		// 空きクラスタの最小のクラスタ番号
+		// 最小の空きクラスタ番号
 		uint32_t m_FirstFreeCluster;
 
+		// 最小の空きクラスタ番号から連続して空いているクラスタ数
+		uint32_t m_ContiguousFreeClusterCount;
 
 
 	public:
@@ -137,7 +139,7 @@ namespace mfs{
 		RESULT_e FindDirEntry(Manage_t &manage, const fschar_t *path, uint32_t attributes);
 
 		// 空きクラスタを検索する
-		RESULT_e FindFreeCluster(uint32_t start_cluster, uint32_t &found_cluster);
+		RESULT_e FindFreeClusters(uint32_t start_cluster, uint32_t &found_cluster, uint32_t &contiguous_clusters);
 
 
 

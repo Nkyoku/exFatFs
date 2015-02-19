@@ -452,7 +452,8 @@ namespace mfs{
 		m_FreeClusterCount = UNUSED_CLUSTER_COUNT;
 		m_RootDirEntryCluster = root_directory_first_cluster;
 		m_AllocBitmapCluster = INVALID_CLUSTER;
-		m_FirstFreeCluster = MINIMUM_VALID_CLUSTER;
+		m_FirstFreeCluster = INVALID_CLUSTER;
+		m_ContiguousFreeClusterCount = 0;
 
 		// 特殊なディレクトリエントリを探す
 		result = FindSpecialDirEntry();
@@ -466,6 +467,19 @@ namespace mfs{
 		result = InitManage(m_AllocBitmapManage);
 		if (result != RES_SUCCEEDED){
 			return result;
+		}
+
+		if (Writable() == true){
+			// 空きクラスタを探しておく
+			result = FindFreeClusters(MINIMUM_VALID_CLUSTER, m_FirstFreeCluster, m_ContiguousFreeClusterCount);
+			if (result != RES_SUCCEEDED){
+				if (result == RES_NOT_FOUND){
+					ProhibitWriting();
+				}
+				else{
+					return result;
+				}
+			}
 		}
 
 		// マウント処理を終了する
@@ -521,59 +535,24 @@ namespace mfs{
 			uint64_t free_space;
 			if (Mounted() == true){
 				if (m_FreeClusterCount == UNUSED_CLUSTER_COUNT){
-					// クラスタ割り当てビットマップを検索して空きクラスタ数を調べる
-					RESULT_e result;
-					bool found_free_cluster = false;
-					uint32_t free_cluster = MINIMUM_VALID_CLUSTER;
-					uint32_t free_cluster_count = 0;
-					result = SeekCluster(m_AllocBitmapManage, 0);
-					if (result == RES_SUCCEEDED){
-						// ビットマップを読み取り、空きクラスタを数える
-						uint32_t remaining_cluster_count = m_ClusterCount;
-						do{
-							// ALLOC_BITMAP_UNITバイトだけ読み取る
-							uint8_t bitmap[ALLOC_BITMAP_UNIT];
-							result = ReadCluster(m_AllocBitmapManage, bitmap, ALLOC_BITMAP_UNIT);
-							if (result != RES_SUCCEEDED){
-								break;
+					// 空きクラスタの検索結果を合計する
+					uint32_t free_cluster_count = 0;;
+					uint32_t cluster = MINIMUM_VALID_CLUSTER;
+					while (true){
+						uint32_t count;
+						RESULT_e result;
+						result = FindFreeClusters(cluster, cluster, count);
+						if (result == RES_SUCCEEDED){
+							cluster += count;
+							free_cluster_count += count;
+						}
+						else{
+							if (result != RES_NOT_FOUND){
+								free_cluster_count = 0;
 							}
-
-							// ビットの数を数える
-							uint32_t *p = (uint32_t*)bitmap;
-							uint32_t *p_end;
-							if ((ALLOC_BITMAP_UNIT * 8) <= remaining_cluster_count){
-								p_end = p + ALLOC_BITMAP_UNIT / 4;
-								remaining_cluster_count -= ALLOC_BITMAP_UNIT * 8;
-							}
-							else{
-								p_end = p + RShiftCeilingPV32(remaining_cluster_count, 5);
-								if (remaining_cluster_count % 32){
-									free_cluster_count -= PopCount32(~(LoadLE32(p_end - 1) | ((1UL << (remaining_cluster_count % 32)) - 1)));
-								}
-								remaining_cluster_count = 0;
-							}
-							if (found_free_cluster == false){
-								// 空きクラスタを探す
-								while (p < p_end){
-									uint32_t bit = ~*p++;
-									free_cluster_count += PopCount32(bit);
-									if (bit != 0){
-										free_cluster += CountTrailingZeros32(bit);
-										found_free_cluster = true;
-										break;
-									}
-									else{
-										free_cluster += 32;
-									}
-								}
-							}
-							while (p < p_end){
-								free_cluster_count += PopCount32(~*p++);
-							}
-						} while (0 < remaining_cluster_count);
+							break;
+						}
 					}
-
-					m_FirstFreeCluster = free_cluster;
 					m_FreeClusterCount = free_cluster_count;
 				}
 				free_space = LShift32to64(m_FreeClusterCount, m_SectorsPerClusterShift + m_BytesPerSectorShift);
@@ -1373,24 +1352,26 @@ namespace mfs{
 	}
 
 	// 空きクラスタを検索する
-	RESULT_e ExFatFs::FindFreeCluster(uint32_t start_cluster, uint32_t &found_cluster){
+	RESULT_e ExFatFs::FindFreeClusters(uint32_t start_cluster, uint32_t &found_cluster, uint32_t &contiguous_clusters){
 		RESULT_e result;
-		uint32_t cluster = start_cluster;
-		if ((MINIMUM_VALID_CLUSTER + m_ClusterCount) <= cluster){
+		start_cluster = (start_cluster < MINIMUM_VALID_CLUSTER) ? 0 : (start_cluster - MINIMUM_VALID_CLUSTER);
+		if (m_ClusterCount <= start_cluster){
 			return RES_NOT_FOUND;
 		}
-		cluster = (cluster < MINIMUM_VALID_CLUSTER) ? 0 : (cluster - MINIMUM_VALID_CLUSTER);
 
 		// 検索を始めるところにシークする
-		uint32_t offset = (cluster >> 3) & ~(ALLOC_BITMAP_UNIT - 1);	// offsetをALLOC_BITMAP_UNITの倍数にする
+		uint32_t offset = (start_cluster >> 3) & ~(ALLOC_BITMAP_UNIT - 1);	// offsetをALLOC_BITMAP_UNITの倍数にする
 		result = SeekCluster(m_AllocBitmapManage, offset);
 		if (result != RES_SUCCEEDED){
 			return result;
 		}
 
 		// ビットマップを読み取り、空きクラスタを探す
-		uint32_t remaining_cluster_count = m_ClusterCount - cluster;
-		while (true){
+		uint32_t cluster = start_cluster;
+		uint32_t contiguous_zeros = 0;
+		uint32_t remaining_cluster_count = m_ClusterCount - start_cluster;
+		uint32_t skip_bits = start_cluster & (ALLOC_BITMAP_UNIT * 8 - 1);
+		do{
 			// ALLOC_BITMAP_UNITバイトだけ読み取る
 			uint8_t bitmap[ALLOC_BITMAP_UNIT];
 			result = ReadCluster(m_AllocBitmapManage, bitmap, ALLOC_BITMAP_UNIT);
@@ -1398,51 +1379,56 @@ namespace mfs{
 				return result;
 			}
 
-			uint32_t *p;
+			// 空きクラスタを探す
+			uint32_t *p = (uint32_t*)bitmap + skip_bits / 32;
 			uint32_t *p_end = (uint32_t*)bitmap + ALLOC_BITMAP_UNIT / 4;
-			uint32_t count;
-			uint32_t droping = cluster & (ALLOC_BITMAP_UNIT * 8 - 1);
-			if (droping != 0){
-				// 空きクラスタを探す
-				count = (ALLOC_BITMAP_UNIT * 8) - droping;
-				uint32_t remaining_bits = count & 0x1F;
-				p = (uint32_t*)bitmap + droping / 32;
-				uint32_t bit = ~*p++ >> (cluster & 0x1F);
-				if (bit != 0){
-					cluster += CountTrailingZeros32(bit);
-					goto finish;
-				}
-				cluster += remaining_bits;
+			uint32_t count = ALLOC_BITMAP_UNIT * 8 - skip_bits;
+			if (skip_bits != 0){
+				skip_bits = 0;
+				*p |= ((1UL << (cluster & 0x1F)) - 1);
+				cluster &= ~0x1F;
+			}
+			if (count < remaining_cluster_count){
+				remaining_cluster_count -= count;
 			}
 			else{
-				p = (uint32_t*)bitmap;
-				count = ((ALLOC_BITMAP_UNIT * 8) < remaining_cluster_count) ? (ALLOC_BITMAP_UNIT * 8) : remaining_cluster_count;
+				remaining_cluster_count = 0;
 			}
-			
-			// 空きクラスタを探す
 			while (p < p_end){
 				uint32_t bit = ~*p++;
-				if (bit != 0){
-					cluster += CountTrailingZeros32(bit);
+				uint32_t sr = bit;
+				if (contiguous_zeros == 0){
+					if (bit == 0){
+						cluster += 32;
+						continue;
+					}
+					else{
+						uint32_t tz = CountTrailingZeros32(bit);
+						cluster += tz;
+						sr >>= tz;
+					}
+				}
+				while (sr & 0x1){
+					contiguous_zeros++;
+					sr >>= 1;
+				}
+				if ((sr & ~0x1) || (~bit & 0x80000000UL)){
 					goto finish;
 				}
-				else{
-					cluster += 32;
-				}
 			}
-
-			if (remaining_cluster_count <= count){
-				break;
-			}
-			remaining_cluster_count -= count;
-		};
+		}while (0 < remaining_cluster_count);
 	finish:
 		if (m_ClusterCount <= cluster){
-			found_cluster = INVALID_CLUSTER;
+			return RES_NOT_FOUND;
 		}
-
-		found_cluster = MINIMUM_VALID_CLUSTER + cluster;
-		return RES_SUCCEEDED;
+		else{
+			if ((m_ClusterCount - cluster) < contiguous_zeros){
+				contiguous_zeros = m_ClusterCount - cluster;
+			}
+			contiguous_clusters = contiguous_zeros;
+			found_cluster = MINIMUM_VALID_CLUSTER + cluster;
+			return RES_SUCCEEDED;
+		}
 	}
 
 
