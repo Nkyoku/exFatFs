@@ -1,0 +1,93 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="ソース ファイル">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="ヘッダー ファイル">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="リソース ファイル">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="ソース ファイル\minifs">
+      <UniqueIdentifier>{357094b7-df3c-495d-a944-7f6fd247a659}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\minifs">
+      <UniqueIdentifier>{1fbad0d8-0990-43df-8414-dedbd6a5a93a}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Source\main.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\minifs\minifs.cpp">
+      <Filter>ソース ファイル\minifs</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\minifs\basicfs.cpp">
+      <Filter>ソース ファイル\minifs</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\minifs\minifs_filesystem.cpp">
+      <Filter>ソース ファイル\minifs</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\minifs\minifs_path.cpp">
+      <Filter>ソース ファイル\minifs</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\minifs\exfatfs.cpp">
+      <Filter>ソース ファイル\minifs</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Source\minifs\minifs_config.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs_diskio.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\file_diskio.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\basicfs.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs_filesystem.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs_common.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs_filehandle.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs_dirhandle.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs_handle.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs_path.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs_cache.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\minifs_builtin.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\exfatfs_common.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\mem_diskio.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\minifs\exfatfs.h">
+      <Filter>ヘッダー ファイル\minifs</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
