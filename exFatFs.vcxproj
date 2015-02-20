@@ -82,6 +82,7 @@
     <ClCompile Include="Source\minifs\exfatfs.cpp" />
     <ClCompile Include="Source\minifs\minifs.cpp" />
     <ClCompile Include="Source\minifs\basicfs.cpp" />
+    <ClCompile Include="Source\minifs\minifs_cache.cpp" />
     <ClCompile Include="Source\minifs\minifs_filesystem.cpp" />
     <ClCompile Include="Source\minifs\minifs_path.cpp" />
   </ItemGroup>

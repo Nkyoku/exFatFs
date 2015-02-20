@@ -45,11 +45,11 @@ int main(void){
 		//mfs::FileHandle *pfile;
 		//filehandle.open(eff, L"/test.bin");
 
-		/*mfs::DirHandle *pdir;
+		mfs::DirHandle *pdir;
 		pdir = pfs->openDir(L"/");
 		if (pdir != nullptr){
 			while (true){
-				mfs::DirInfo_t info;
+				mfs::FileInfo_t info;
 				mfs::RESULT_e result = pdir->read(&info);
 				if (result != mfs::RES_SUCCEEDED){
 					break;
@@ -57,7 +57,7 @@ int main(void){
 				wprintf(L"Item '%s' attr=0x%X\n", info.name, info.attributes);
 			}
 			delete pdir;
-		}*/
+		}//*/
 
 
 

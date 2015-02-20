@@ -39,8 +39,14 @@ namespace mfs{
 		// クラスタ割り当てビットマップのあるクラスタ番号
 		uint32_t m_AllocBitmapCluster;
 
-		// クラスタ割り当てビットマップへアクセスするためのManage_t
+		// クラスタ割り当てビットマップにアクセスするための構造体
 		Manage_t m_AllocBitmapManage;
+
+		// クラスタ割り当てビットマップのキャッシュ
+		Cache m_AllocBitmapCache;
+
+		// FATとディレクトリエントリのキャッシュ
+		Cache m_FATAndDirCache;
 
 		// 最小の空きクラスタ番号
 		uint32_t m_FirstFreeCluster;
@@ -87,7 +93,7 @@ namespace mfs{
 		virtual RESULT_e CloseDir(DirHandle &dirhandle) override;
 
 		// ディレクトリを列挙する
-		virtual RESULT_e ReadDir(DirHandle &dirhandle, DirInfo_t *pinfo) override;
+		virtual RESULT_e ReadDir(DirHandle &dirhandle, FileInfo_t *pinfo) override;
 
 	protected:
 		// ファイルを開く
@@ -122,11 +128,15 @@ namespace mfs{
 		// ポインタをシークする
 		RESULT_e SeekCluster(Manage_t &manage, uint64_t offset);
 
-		// クラスタを読み出す
+		// クラスタチェインを読み出す
 		RESULT_e ReadCluster(Manage_t &manage, void *buf, uint32_t length);
 
-		// クラスタへ書き込む
+		// クラスタチェインへ書き込む
 		RESULT_e WriteCluster(Manage_t &manage, const void *buf, uint32_t length);
+
+		// クラスタチェインを削除する
+		RESULT_e DeleteCluster(Manage_t &manage);
+
 
 	protected:
 		// 特殊なディレクトリエントリを検索する
@@ -136,7 +146,7 @@ namespace mfs{
 		RESULT_e FindDir(Manage_t &manage, CONDITION_t &conditions, bool detail);
 
 		// ディレクトリエントリを検索する
-		RESULT_e FindDirEntry(Manage_t &manage, const fschar_t *path, uint32_t attributes);
+		RESULT_e FindDirEntry(Manage_t &manage, uint32_t attributes, const fschar_t *path);
 
 		// 空きクラスタを検索する
 		RESULT_e FindFreeClusters(uint32_t start_cluster, uint32_t &found_cluster, uint32_t &contiguous_clusters);

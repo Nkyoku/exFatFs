@@ -62,7 +62,7 @@ public:
 					GET_LENGTH_INFORMATION info;
 					DWORD ret_byte;
 					if (DeviceIoControl(m_hFile, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &info, sizeof(GET_LENGTH_INFORMATION), &ret_byte, nullptr) == FALSE){
-						result = mfs::RES_ERROR;
+						result = mfs::RES_DISK_ERROR;
 						break;
 					}
 					ret = info.Length;
@@ -76,7 +76,7 @@ public:
 				break;
 			}
 			else{
-				result = mfs::RES_NO_DISK;
+				result = mfs::RES_NOT_READY;
 				break;
 			}
 		} while (false);
@@ -140,7 +140,7 @@ public:
 							LARGE_INTEGER ptr;
 							ptr.QuadPart = (uint64_t)sector * m_BytesPerSector;
 							if (SetFilePointerEx(m_hFile, ptr, nullptr, FILE_BEGIN) == FALSE){
-								result = mfs::RES_ERROR;
+								result = mfs::RES_DISK_ERROR;
 								break;
 							}
 						}
@@ -153,7 +153,7 @@ public:
 
 					}
 					uint32_t error = GetLastError();
-					result = mfs::RES_ERROR;
+					result = mfs::RES_DISK_ERROR;
 					break;
 				}
 				else{
@@ -162,7 +162,7 @@ public:
 				}
 			}
 			else{
-				result = mfs::RES_NO_DISK;
+				result = mfs::RES_NOT_READY;
 				break;
 			}
 		} while (false);
@@ -183,7 +183,7 @@ public:
 							LARGE_INTEGER ptr;
 							ptr.QuadPart = (uint64_t)sector * m_BytesPerSector;
 							if (SetFilePointerEx(m_hFile, ptr, nullptr, FILE_BEGIN) == FALSE){
-								result = mfs::RES_ERROR;
+								result = mfs::RES_DISK_ERROR;
 								break;
 							}
 						}
@@ -194,7 +194,7 @@ public:
 							break;
 						}
 					}
-					result = mfs::RES_ERROR;
+					result = mfs::RES_DISK_ERROR;
 					break;
 				}
 				else{
@@ -203,7 +203,7 @@ public:
 				}
 			}
 			else{
-				result = mfs::RES_NO_DISK;
+				result = mfs::RES_NOT_READY;
 				break;
 			}
 		} while (false);

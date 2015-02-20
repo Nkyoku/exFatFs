@@ -63,7 +63,7 @@ namespace mfs{
 		virtual RESULT_e CloseDir(DirHandle &dirhandle){ return RES_SUCCEEDED; }
 
 		// ディレクトリを列挙する
-		virtual RESULT_e ReadDir(DirHandle &dirhandle, DirInfo_t *info){ return RES_NOT_MOUNTED; }
+		virtual RESULT_e ReadDir(DirHandle &dirhandle, FileInfo_t *info){ return RES_NOT_MOUNTED; }
 
 	protected:
 		// ファイルを開く

@@ -10,6 +10,9 @@ namespace mfs{
 	// ディスクI/Oを提供するインターフェースクラス
 	class IMiniFSDiskIO;
 
+	// キャッシュ機構を提供するクラス
+	class Cache;
+
 
 
 	// セクターサイズの最小値
@@ -27,6 +30,9 @@ namespace mfs{
 	// MBRのブートシグネチャ
 	static const uint16_t BOOT_SIGNATURE = 0xAA55;
 
+	// 無効なセクター番号
+	static const uint32_t INVALID_SECTOR = 0;
+
 
 
 	// ディスク情報
@@ -39,102 +45,103 @@ namespace mfs{
 
 	// ディスクステータスフラグ
 	enum DISKSTATUS_e{
-		STA_NOT_INITIALIZED = 0x1,		// ディスクは初期化されていない
-		STA_NO_DISK = 0x2,				// ディスクは存在しない
-		STA_WRITE_PROTECTED = 0x4,		// 書き込みが禁止されている
+		STA_NOT_INITIALIZED = 0x1,			// ディスクは初期化されていない
+		STA_NO_DISK = 0x2,					// ディスクは存在しない
+		STA_WRITE_PROTECTED = 0x4,			// 書き込みが禁止されている
 	};
 
 	// 戻り値
 	enum RESULT_e{
-		RES_SUCCEEDED = 0,				// 関数は正常に終了した
-		RES_ERROR,						// 何らかのエラーが発生した
-		RES_REJECTED,					// ディスクアクセスが拒否された
-		RES_NOT_READY,					// ディスクの準備ができていない
-		RES_NO_DISK,					// ディスクが存在しない
-		RES_INVALID_DATA,				// データが異常である
-		RES_NOT_SUPPORTED,				// 非対応の形式である
-		RES_NOT_MOUNTED,				// ファイルシステムはマウントされていない
-		RES_NOT_FOUND,					// 条件に一致しなかった、ファイル・ディレクトリは存在しない
-		RES_INVALID_PATH,				// ファイルパスの形式が不正である
-		RES_NO_DATA,					// 読み出せるデータが存在しない
-		RES_INVALID_HANDLE,				// ファイル・ディレクトリハンドルが異常である
-		RES_TIMEOUT,					// 操作がタイムアウトした
-		RES_SIZE_EXCEEDED,				// サイズがオーバーした
+		RES_SUCCEEDED = 0,					// 処理は正常に終了した
+		RES_DISK_ERROR,						// ディスクI/Oの操作時にエラーが発生した。
+		RES_NOT_READY,						// ディスクの用意ができていない。ディスクの初期化に失敗した。
+		RES_WRITE_PROTECTED,				// 書き込み禁止のディスクに書き込もうとした。
+		RES_INTERNAL_ERROR,					// 内部エラーが発生した。
+		RES_NOT_SUPPORTED,					// 非対応の形式である。
+		RES_NOT_MOUNTED,					// ファイルシステムがマウントされていない
+		RES_NOT_FOUND,						// パスが存在しない。条件に一致しなかった。
+		RES_INVALID_NAME,					// パスのフォーマットが無効である。
+		RES_READ_ONLY,						// ATTR_READONLY属性を持つファイル・ディレクトリを変更しようとした。
+		RES_NOT_EMPTY,						// 空でないディレクトリを削除しようとした。
+		RES_ALREADY_EXIST,					// 作成しようとしたファイル・ディレクトリがすでに存在した。
+		RES_INVALID_HANDLE,					// ファイル・ディレクトリハンドルが無効である。
+		RES_NO_DATA,						// 読み出せるデータが存在しない
+		RES_NO_FILESYSTEM,					// ファイルシステムが存在しない。
+		RES_TIMEOUT,						// 操作がタイムアウトした。
+		RES_LOCKED,							// 排他制御によってファイルが開けなかった。
+		RES_INVALID_PARAMETERS,				// パラメータが無効である。
 	};
 
 	// パーティションの種類
 	enum PartitionType_e{
-		PID_EMPTY = 0,					// 空のパーティション
-		PID_FAT,						// FAT12, FAT16, FAT32
-		PID_EXFAT,						// exFAT
-		PID_EXTENDED,					// (拡張パーティション)
-		PID_OTHERS						// 判別できないファイルシステム
+		PID_EMPTY = 0,						// 空のパーティション
+		PID_FAT,							// FAT12, FAT16, FAT32
+		PID_EXFAT,							// exFAT
+		PID_EXTENDED,						// (拡張パーティション)
+		PID_OTHERS							// 判別できないファイルシステム
 	};
 
-	// ファイルアトリビュート
+	// ファイルアトリビュート(属性)
 	enum ATTRIBUTES_e{
-		ATTR_READONLY	= 0x0001,		// 読み込み専用
-		ATTR_HIDDEN		= 0x0002,		// 隠しファイル・ディレクトリ
-		ATTR_SYSTEM		= 0x0004,		// システムのファイル・ディレクトリ
-		ATTR_DIRECTORY	= 0x0010,		// ディレクトリ
-		ATTR_ARCHIVE	= 0x0020,		// アーカイブ
-		ATTR_WRITABLE	= 0x00010000,	// (書き込みモードで開かれている)
-		ATTR_CONTIGUOUS	= 0x00020000,	// (フラグメンテーションが起きていない)
+		ATTR_READONLY	= 0x0001,			// 読み込み専用
+		ATTR_HIDDEN		= 0x0002,			// 隠しファイル・ディレクトリ
+		ATTR_SYSTEM		= 0x0004,			// システムのファイル・ディレクトリ
+		ATTR_DIRECTORY	= 0x0010,			// ディレクトリ
+		ATTR_ARCHIVE	= 0x0020,			// アーカイブ
 	};
 
 	// パーティション情報を格納する構造体
 	struct PartitionInfo_t{
-		IMiniFSDiskIO *pdiskio;			// ディスクI/Oへのポインタ
-		uint32_t table_sector;			// パーティションテーブルのあるセクター番号
-		uint32_t table_offset;			// パーティションテーブルのオフセット
-		bool active_flag;				// アクティブフラグ
-		PartitionType_e partition_type;	// パーティションの種類
-		uint32_t partition_sector;		// パーティションの開始セクター番号
-		uint32_t partition_size;		// パーティションのセクター総数
+		IMiniFSDiskIO *pdiskio;				// ディスクI/Oへのポインタ
+		uint32_t table_sector;				// パーティションテーブルのあるセクター番号
+		uint32_t table_offset;				// パーティションテーブルのオフセット
+		bool active_flag;					// アクティブフラグ
+		PartitionType_e partition_type;		// パーティションの種類
+		uint32_t partition_sector;			// パーティションの開始セクター番号
+		uint32_t partition_size;			// パーティションのセクター総数
 	};
 
-	// ファイル・ディレクトリの情報を格納する構造体
-	struct DirInfoBase_t{
-		uint64_t size;					// サイズ
-		uint32_t creation_time;			// 作成日時
-		uint32_t modified_time;			// 更新日時
-		uint32_t accessed_time;			// アクセス日時
-		uint32_t attributes;			// アトリビュート
+	// ファイル・ディレクトリのプロパティを格納する構造体
+	struct Property_t{
+		uint64_t size;						// サイズ
+		uint32_t attributes;				// アトリビュート
+		uint32_t creation_time;				// 作成日時
+		uint32_t modified_time;				// 更新日時
+		uint32_t accessed_time;				// アクセス日時
 	};
 
-	// ファイル・ディレクトリの情報を格納する構造体
-	struct DirInfo_t : DirInfoBase_t{
-		fschar_t name[MAXIMUM_PATH + 1];// ファイル・ディレクトリ名
+	// ファイル・ディレクトリのプロパティと名前を格納する構造体
+	struct FileInfo_t : Property_t{
+		fschar_t name[MAXIMUM_PATH + 1];	// ファイル・ディレクトリ名
 	};
 
-	// ファイル・ディレクトリを管理する構造体
-	struct ManageBase_t : DirInfoBase_t{
-		uint32_t entry_cluster;			// ディレクトリエントリのあるディレクトリのクラスタ番号
-		uint32_t entry_offset;			// ディレクトリエントリのあるオフセット
-		uint32_t start_cluster;			// データのある最初のクラスタ番号
+	// ファイル・ディレクトリの格納場所を格納する構造体
+	struct ManageBase_t{
+		uint32_t flags;						// フラグ
+		uint32_t start_cluster;				// データのある最初のクラスタ番号
+		uint64_t size;						// サイズ
+		uint32_t entry_flags;				// ディレクトリエントリのあるディレクトリのフラグ
+		uint32_t entry_cluster;				// ディレクトリエントリのあるディレクトリの最初のクラスタ番号
+		uint32_t entry_offset;				// ディレクトリエントリのあるオフセット
 	};
 
 	// ファイル・ディレクトリにアクセスするための構造体
 	struct Manage_t : ManageBase_t{
-		uint32_t frag_head_cluster;		// 現在アクセス中のフラグメントの最初のクラスタ番号
-		uint32_t frag_tail_cluster;		// 現在アクセス中のフラグメントの最後のクラスタ番号
-		uint32_t next_frag_cluster;		// 次のフラグメントの最初のクラスタ番号
-		uint32_t current_cluster;		// 現在のポインタがあるクラスタ番号
-		uint64_t pointer;				// ポインタ
-		
-		bool cache_modified;			// キャッシュが書き換えられたことを示すフラグ
-		uint32_t cached_sector;			// キャッシュしているセクター番号
-		uint8_t cache[MAX_SECTOR_SIZE];	// キャッシュ
+		uint32_t frag_head_cluster;			// 現在アクセス中のフラグメントの最初のクラスタ番号
+		uint32_t frag_tail_cluster;			// 現在アクセス中のフラグメントの最後のクラスタ番号
+		uint32_t next_frag_cluster;			// 次のフラグメントの最初のクラスタ番号
+		uint32_t current_cluster;			// 現在のファイルポインタがあるクラスタ番号
+		uint64_t pointer;					// ファイルポインタ
+		Cache *pcache;						// キャッシュへのポインタ
 
 		// 初期化する
-		void init(void){
+		void Init(Cache *pcache_){
 			frag_head_cluster = 0;
 			frag_tail_cluster = 0;
 			next_frag_cluster = 0;
 			current_cluster = 0;
 			pointer = 0;
-			cache_modified = false;
-			cached_sector = 0;
+			pcache = pcache_;
 		}
 	};
 

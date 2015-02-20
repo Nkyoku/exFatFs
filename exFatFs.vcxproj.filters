@@ -39,6 +39,9 @@
     <ClCompile Include="Source\minifs\exfatfs.cpp">
       <Filter>ソース ファイル\minifs</Filter>
     </ClCompile>
+    <ClCompile Include="Source\minifs\minifs_cache.cpp">
+      <Filter>ソース ファイル\minifs</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\minifs\minifs_config.h">

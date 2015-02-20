@@ -35,11 +35,6 @@ namespace mfs{
 	protected:
 		// コンストラクタ
 		IMiniFSHandle(void) : m_pFileSystem(&NullFs), m_pPreviousHandle(nullptr), m_pNextHandle(nullptr), m_Manage(){}
-
-		// 初期化する
-		void init(void){
-			m_pFileSystem = &NullFs;
-		}
 	};
 }
 

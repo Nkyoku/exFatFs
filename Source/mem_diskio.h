@@ -163,7 +163,7 @@ public:
 					}
 					result = mfs::RES_SUCCEEDED;
 				}else{
-					result = mfs::RES_ERROR;
+					result = mfs::RES_DISK_ERROR;
 				}
 				break;
 			}
@@ -194,7 +194,7 @@ public:
 					result = mfs::RES_SUCCEEDED;
 				}
 				else{
-					result = mfs::RES_ERROR;
+					result = mfs::RES_DISK_ERROR;
 				}
 				break;
 			}

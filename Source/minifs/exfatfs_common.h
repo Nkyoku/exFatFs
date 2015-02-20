@@ -51,11 +51,23 @@ namespace mfs{
 
 	// ファイル・ディレクトリを探す際の検索条件
 	struct CONDITION_t{
-		ManageBase_t managebase;			// 検索結果を格納するファイル・ディレクトリの管理情報
+		Property_t property;				// 検索結果のファイル・ディレクトリのプロパティ
+		ManageBase_t managebase;			// 検索結果のファイル・ディレクトリの管理情報
 		uint32_t attributes;				// 検索するアトリビュートのマスク(上位16ビット)と値(下位16ビット)
 		uint16_t *output_name_string;		// 発見したファイル・ディレクトリ名の出力先(nullptrならファイル名は出力されない)
 		const uint16_t *target_name_string;	// 対象のファイル・ディレクトリ名(nullptrならファイル名は比較しない)
 		uint16_t target_name_checksum;		// 対象のファイル・ディレクトリ名のチェックサム
+	};
+
+	// ManageBase_tのフラグ
+	enum FLAG_e{
+		FLAG_READONLY = ATTR_READONLY,		// 読み込み専用
+		FLAG_HIDDEN = ATTR_HIDDEN,			// 隠しファイル・ディレクトリ
+		FLAG_SYSTEM = ATTR_SYSTEM,			// システムのファイル・ディレクトリ
+		FLAG_DIRECTORY = ATTR_DIRECTORY,	// ディレクトリ
+		FLAG_ARCHIVE = ATTR_ARCHIVE,		// アーカイブ
+		FLAG_WRITABLE = 0x10000,			// 書き込みモードで開かれている
+		FLAG_CONTIGUOUS = 0x20000,			// フラグメンテーションが起きていない
 	};
 
 	// クラスタ番号からセクター番号を計算する

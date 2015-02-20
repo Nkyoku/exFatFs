@@ -3,6 +3,7 @@
 #define MINIFS_FILEHANDLE_H
 
 #include "minifs_handle.h"
+#include "minifs_cache.h"
 
 
 
@@ -12,12 +13,15 @@ namespace mfs{
 		friend class IBasicFs;
 
 	private:
+		// キャッシュ
+		Cache m_Cache;
+
 		// ファイル管理情報
 		FileManage_t m_FileManage;
 
 	public:
 		// コンストラクタ
-		FileHandle(void) : IMiniFSHandle(), m_FileManage(){}
+		FileHandle(void) : IMiniFSHandle(), m_Cache(), m_FileManage(){}
 
 		// デストラクタ
 		~FileHandle(){
@@ -26,13 +30,16 @@ namespace mfs{
 
 		// ファイルを開く
 		RESULT_e open(IMiniFSFileSystem &filesystem, const fschar_t *path, uint32_t option = 0){
+			// すでにディレクトリを開いているなら閉じる
 			RESULT_e result;
-			close();
-			m_Manage.init();
-			m_FileManage.init();
-			result = filesystem.OpenFile(*this, path, option);
+			result = close();
 			if (result == RES_SUCCEEDED){
-				m_pFileSystem = &filesystem;
+				// メンバー変数を初期化してディレクトリを開く
+				result = filesystem.OpenFile(*this, path, option);
+				if (result == RES_SUCCEEDED){
+					m_pFileSystem = &filesystem;
+					m_Manage.pcache = &m_Cache;
+				}
 			}
 			return result;
 		}
@@ -43,7 +50,7 @@ namespace mfs{
 			flush();
 			result = m_pFileSystem->CloseFile(*this);
 			if (result == RES_SUCCEEDED){
-				init();
+				m_pFileSystem = &NullFs;
 			}
 			return result;
 		}
@@ -83,10 +90,6 @@ namespace mfs{
 			return m_Manage.pointer;
 		}
 
-		// 書き込み可能か取得する
-		bool writable(void){
-			return (m_Manage.attributes & ATTR_WRITABLE) ? true : false;
-		}
 
 
 

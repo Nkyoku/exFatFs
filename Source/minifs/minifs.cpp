@@ -144,7 +144,7 @@ namespace mfs{
 		status = diskio.disk_status();
 		if (status & STA_NO_DISK){
 			// ディスクが存在しないので失敗
-			return RES_NO_DISK;
+			return RES_NOT_READY;
 		}
 		if (status & STA_NOT_INITIALIZED){
 			// ディスクが未初期化であるので初期化する
@@ -165,7 +165,7 @@ namespace mfs{
 
 		if (sector_count == 0){
 			// MBRが読み取れないため失敗
-			return RES_ERROR;
+			return RES_NO_FILESYSTEM;
 		}
 
 		// パーティションの数は4つまで
@@ -180,7 +180,7 @@ namespace mfs{
 			total_sector_count64 += size_list[cnt];
 		}
 		if ((uint64_t)sector_count < total_sector_count64){
-			return RES_SIZE_EXCEEDED;
+			return RES_INTERNAL_ERROR;
 		}
 		total_sector_count = (uint64_t)total_sector_count64;*/
 
@@ -205,7 +205,7 @@ namespace mfs{
 				ptoffset_lba = RShiftCeiling32(ptoffset_lba, sectors_per_block_shift) << sectors_per_block_shift;
 				ptsize_lba = *size_list++;
 				if (sector_count <= ptoffset_lba){
-					return RES_SIZE_EXCEEDED;
+					return RES_INTERNAL_ERROR;
 				}
 				if ((sector_count - ptoffset_lba) < ptsize_lba){
 					ptsize_lba = sector_count - ptoffset_lba;
@@ -273,7 +273,7 @@ namespace mfs{
 				break;
 
 			default:
-				return RES_ERROR;
+				result = RES_NOT_SUPPORTED;
 			}
 			if (result == RES_SUCCEEDED){
 				// パーティションテーブルのパーティション識別子を書き換える
