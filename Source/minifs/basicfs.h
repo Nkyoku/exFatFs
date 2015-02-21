@@ -94,56 +94,28 @@ namespace mfs{
 
 		// ディレクトリハンドルを連結リストに追加する
 		void AddHandle(DirHandle &dirhandle){
-			//lockMutex(true);
 			AddHandle(m_pDirListHead, dirhandle);
-			//unlockMutex();
 		}
 
 		// ファイルハンドルを連結リストに追加する
 		void AddHandle(FileHandle &filehandle){
-			//lockMutex(true);
 			AddHandle(m_pFileListHead, filehandle);
-			//unlockMutex();
 		}
 
 		// ディレクトリハンドルを連結リストから削除する
 		void RemoveHandle(DirHandle &dirhandle){
-			//lockMutex(true);
 			RemoveHandle(m_pDirListHead, dirhandle);
-			//unlockMutex();
 		}
 
 		// ファイルハンドルを連結リストから削除する
 		void RemoveHandle(FileHandle &filehandle){
-			//lockMutex(true);
 			RemoveHandle(m_pFileListHead, filehandle);
-			//unlockMutex();
 		}
 
 		// 指定されたファイル・ディレクトリがすでに開かれているか調べる
-		bool IsAlreadyOpened(ManageBase_t &manage){
-			return IsAlreadyOpened((manage.flags & ATTR_DIRECTORY) ? m_pDirListHead : m_pFileListHead, manage);
+		bool IsAlreadyOpened(DirEntry_t &direntry){
+			return IsAlreadyOpened((direntry.flags & ATTR_DIRECTORY) ? m_pDirListHead : m_pFileListHead, direntry);
 		}
-
-		// 連結リストの最初のファイルハンドルを取得する
-		/*FileHandle* GetFirstFileHandle(void){
-			return (FileHandle*)m_pFileListHead;
-		}
-
-		// 連結リストの次のファイルハンドルを取得する
-		FileHandle* GetNextFileHandle(FileHandle *phandle){
-			return (FileHandle*)phandle->m_pNextHandle;
-		}
-
-		// 連結リストの最初のディレクトリハンドルを取得する
-		DirHandle* GetFirstDirHandle(void){
-			return (DirHandle*)m_pDirListHead;
-		}
-
-		// 連結リストの次のディレクトリハンドルを取得する
-		DirHandle* GetNextDirHandle(DirHandle *phandle){
-			return (DirHandle*)phandle->m_pNextHandle;
-		}*/
 
 	private:
 		// ハンドルを連結リストに追加する
@@ -153,34 +125,18 @@ namespace mfs{
 		static void RemoveHandle(IMiniFSHandle *&phead, IMiniFSHandle &handle);
 
 		// 指定されたファイル・ディレクトリがすでに開かれているか調べる
-		static bool IsAlreadyOpened(IMiniFSHandle *phead, ManageBase_t &manage);
+		static bool IsAlreadyOpened(IMiniFSHandle *phead, DirEntry_t &direntry);
 
 	protected:
-		// ディレクトリ・ファイルハンドルの管理情報を取得する
-		static Manage_t& GetManage(IMiniFSHandle &handle);
-
-		// ディレクトリハンドルの管理情報を取得する
-		static DirManage_t* GetDirManage(DirHandle &handle);
-
-		// ファイルハンドルの管理情報を取得する
-		static FileManage_t* GetFileManage(FileHandle &handle);
+		// ファイル・ディレクトリハンドルのクラスタチェインを取得する
+		static Chain_t& GetChain(IMiniFSHandle &handle);
 	};
 
 
 
-	// ディレクトリ・ファイルハンドルの管理情報を取得する
-	inline Manage_t& IBasicFs::GetManage(IMiniFSHandle &handle){
-		return handle.m_Manage;
-	}
-
-	// ディレクトリハンドルのファイル管理情報を取得する
-	inline DirManage_t* IBasicFs::GetDirManage(DirHandle &handle){
-		return &handle.m_DirManage;
-	}
-
-	// ファイルハンドルのファイル管理情報を取得する
-	inline FileManage_t* IBasicFs::GetFileManage(FileHandle &handle){
-		return &handle.m_FileManage;
+	// ファイル・ディレクトリハンドルのクラスタチェインを取得する
+	inline Chain_t& IBasicFs::GetChain(IMiniFSHandle &handle){
+		return handle.m_Chain;
 	}
 }
 

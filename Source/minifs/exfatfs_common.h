@@ -52,14 +52,14 @@ namespace mfs{
 	// ファイル・ディレクトリを探す際の検索条件
 	struct CONDITION_t{
 		Property_t property;				// 検索結果のファイル・ディレクトリのプロパティ
-		ManageBase_t managebase;			// 検索結果のファイル・ディレクトリの管理情報
+		DirEntry_t direntry;				// 検索結果のファイル・ディレクトリの格納場所
 		uint32_t attributes;				// 検索するアトリビュートのマスク(上位16ビット)と値(下位16ビット)
 		uint16_t *output_name_string;		// 発見したファイル・ディレクトリ名の出力先(nullptrならファイル名は出力されない)
 		const uint16_t *target_name_string;	// 対象のファイル・ディレクトリ名(nullptrならファイル名は比較しない)
 		uint16_t target_name_checksum;		// 対象のファイル・ディレクトリ名のチェックサム
 	};
 
-	// ManageBase_tのフラグ
+	// DirEntry_tのフラグ
 	enum FLAG_e{
 		FLAG_READONLY = ATTR_READONLY,		// 読み込み専用
 		FLAG_HIDDEN = ATTR_HIDDEN,			// 隠しファイル・ディレクトリ

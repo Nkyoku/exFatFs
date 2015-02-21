@@ -47,10 +47,10 @@ namespace mfs{
 	}
 
 	// 指定されたファイル・ディレクトリがすでに開かれているか調べる
-	bool IBasicFs::IsAlreadyOpened(IMiniFSHandle *phead, ManageBase_t &manage){
+	bool IBasicFs::IsAlreadyOpened(IMiniFSHandle *phead, DirEntry_t &direntry){
 		IMiniFSHandle *p = phead;
 		while (p != nullptr){
-			if (p->m_Manage.start_cluster == manage.start_cluster){
+			if (p->m_Chain.start_cluster == direntry.start_cluster){
 				return true;
 			}
 			p = p->m_pNextHandle;

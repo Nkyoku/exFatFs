@@ -52,6 +52,11 @@ namespace mfs{
 		// キャッシュへ書き込む
 		RESULT_e WriteTo(IMiniFSDiskIO *pdiskio, uint32_t sector, void *buf, uint32_t offset, uint32_t length);
 
+		// キャッシュを書き換えたことにする
+		void SetModified(bool modified){
+			m_Modified = modified;
+		}
+
 		// バッファを取得する
 		void* GetBuffer(uint32_t offset){
 			return m_Buffer + offset;

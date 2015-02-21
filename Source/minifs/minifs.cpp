@@ -53,9 +53,9 @@ namespace mfs{
 		}
 
 		// セクターサイズとセクター総数を取得
-		uint32_t sector_size = diskio.disk_bytesPerSector();
+		uint32_t bytes_per_sector_shift = diskio.disk_bytesPerSectorShift();
 		uint32_t sector_count = diskio.disk_sectorCount();
-		if ((MIN_SECTOR_SIZE != sector_size) && (MAX_SECTOR_SIZE != sector_size)){
+		if ((bytes_per_sector_shift < MIN_SECTOR_SIZE_SHIFT) || (MAX_SECTOR_SIZE_SHIFT < bytes_per_sector_shift)){
 			// 非対応のセクターサイズであるので失敗
 			return -1;
 		}
@@ -154,10 +154,17 @@ namespace mfs{
 			}
 		}
 
-		// セクターサイズとセクター総数を取得
-		uint32_t bytes_per_sector = diskio.disk_bytesPerSector();
+		// セクターサイズとセクター総数とブロックサイズを取得
+		uint32_t bytes_per_sector_shift = diskio.disk_bytesPerSectorShift();
+		uint32_t bytes_per_sector = 1UL << bytes_per_sector_shift;
 		uint32_t sector_count = diskio.disk_sectorCount();
 		uint32_t sectors_per_block_shift = diskio.disk_sectorsPerBlockShift();
+		if ((bytes_per_sector_shift < MIN_SECTOR_SIZE_SHIFT) || (MAX_SECTOR_SIZE_SHIFT < bytes_per_sector_shift)){
+			// 非対応のセクターサイズであるので失敗
+			return RES_NOT_SUPPORTED;
+		}
+
+
 		if ((MIN_SECTOR_SIZE != bytes_per_sector) && (MAX_SECTOR_SIZE != bytes_per_sector)){
 			// 非対応のセクターサイズであるので失敗
 			return RES_NOT_SUPPORTED;

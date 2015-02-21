@@ -462,14 +462,14 @@ namespace mfs{
 		}
 
 		// クラスタ割り当てビットマップを開く
-		m_AllocBitmapManage.flags = 0;
-		m_AllocBitmapManage.start_cluster = m_AllocBitmapCluster;
-		m_AllocBitmapManage.size = 0;
-		result = InitManage(m_AllocBitmapManage);
+		m_AllocBitmapChain.flags = 0;
+		m_AllocBitmapChain.start_cluster = m_AllocBitmapCluster;
+		m_AllocBitmapChain.size = 0;
+		result = InitChain(m_AllocBitmapChain);
 		if (result != RES_SUCCEEDED){
 			return result;
 		}
-		m_AllocBitmapManage.pcache = &m_AllocBitmapCache;
+		m_AllocBitmapChain.pcache = &m_AllocBitmapCache;
 
 		if (Writable() == true){
 			// 書き込み可能な場合、空きクラスタを探しておく
@@ -503,7 +503,8 @@ namespace mfs{
 
 				if (Writable() == true){
 					// キャッシュをフラッシュ
-					m_AllocBitmapManage.pcache->Flush(m_pDiskIO);
+					m_AllocBitmapCache.Flush(m_pDiskIO);
+					m_FATAndDirCache.Flush(m_pDiskIO);
 
 					// ディスクの書き込み処理を完了させる
 					m_pDiskIO->disk_sync();
@@ -576,33 +577,33 @@ namespace mfs{
 				RESULT_e result;
 				if (Mounted() == true){
 					// ファイル・ディレクトリを探す
-					Manage_t manage;
-					result = FindDirEntry(manage, 0, path);
+					Chain_t chain;
+					result = OpenChain(chain, 0, path);
 					if (result != RES_SUCCEEDED){
 						goto finish;
 					}
-					if (manage.start_cluster == m_RootDirEntryCluster){
+					if (chain.start_cluster == m_RootDirEntryCluster){
 						// ルートディレクトリなので削除できない
 						result = RES_INVALID_PARAMETERS;
 						goto finish;
 					}
 
 					// ファイル・ディレクトリがオープンされていないか確認する
-					if (IsAlreadyOpened(manage) == true){
+					if (IsAlreadyOpened(chain) == true){
 						result = RES_LOCKED;
 						goto finish;
 					}
 
-					if (IsValidCluster(manage.start_cluster) == true){
+					if (IsValidCluster(chain.start_cluster) == true){
 						// ファイル・ディレクトリはデータを持つ
-						if (manage.flags & FLAG_DIRECTORY){
+						if (chain.flags & FLAG_DIRECTORY){
 							// ディレクトリが空か確認する
 							CONDITION_t conditions;
 							conditions.attributes = 0;
 							conditions.output_name_string = nullptr;
 							conditions.target_name_string = nullptr;
 							conditions.target_name_checksum = 0;
-							result = FindDir(manage, conditions, true);
+							result = FindDir(chain, conditions, true);
 							if (result != RES_NOT_FOUND){
 								if (result == RES_SUCCEEDED){
 									result = RES_NOT_EMPTY;
@@ -610,67 +611,25 @@ namespace mfs{
 								goto finish;
 							}
 						}
+
+						// クラスタチェインを削除する
+						result = DeleteChain(chain, chain.start_cluster);
+						if (result != RES_SUCCEEDED){
+							goto finish;
+						}
 					}
 
-					// クラスタチェインを削除する
-					manage.current_cluster = manage.start_cluster;
-					result = DeleteCluster(manage);
-					if (result != RES_SUCCEEDED){
-						goto finish;
-					}
-
-					// ディレクトリを開く
-					uint32_t entry_offset = manage.entry_offset;
-					manage.flags = manage.entry_flags;
-					manage.start_cluster = manage.entry_cluster;
-					result = InitManage(manage);
-					if (result != RES_SUCCEEDED){
-						goto finish;
-					}
-					result = SeekCluster(manage, entry_offset);
+					// 親ディレクトリを開く
+					uint32_t entry_offset = chain.entry_offset;
+					chain.flags = chain.entry_flags;
+					chain.start_cluster = chain.entry_cluster;
+					result = InitChain(chain);
 					if (result != RES_SUCCEEDED){
 						goto finish;
 					}
 
 					// ディレクトリエントリを抹消する
-					uint32_t offset = entry_offset;
-					bool first = true;
-					while (true){
-						// ディレクトリエントリを1つ読み取る
-						RESULT_e result;
-						uint32_t entry[32];
-						result = ReadCluster(manage, entry, DIR_ENTRY_LENGTH);
-						if (result != RES_SUCCEEDED){
-							if (result == RES_NO_DATA){
-								result = RES_SUCCEEDED;
-								break;
-							}
-							else{
-								goto finish;
-							}
-						}
-
-						// 使用中フラグをクリア
-						entry[0] &= ~0x80;
-						if ((entry[0] == 0x00) || (entry[0] == 0x05)){
-							if (first == false){
-								break;
-							}
-							first = false;
-						}
-
-						result = SeekCluster(manage, offset);
-						if (result != RES_SUCCEEDED){
-							goto finish;
-						}
-						result = WriteCluster(manage, entry, DIR_ENTRY_LENGTH);
-						if (result != RES_SUCCEEDED){
-							goto finish;
-						}
-						offset += DIR_ENTRY_LENGTH;
-					}
-
-					result = RES_SUCCEEDED;
+					result = Unlink(chain, entry_offset);
 				}
 				else{
 					result = RES_NOT_MOUNTED;
@@ -694,6 +653,18 @@ namespace mfs{
 			if (lockMutex() == true){
 				RESULT_e result;
 				if (Mounted() == true){
+
+
+
+
+
+
+
+
+
+
+
+
 					result = RES_NOT_SUPPORTED;
 				}
 				else{
@@ -740,7 +711,7 @@ namespace mfs{
 			RESULT_e result;
 			if (Mounted() == true){
 				// 指定されたディレクトリのディレクトリエントリを探す
-				result = FindDirEntry(GetManage(dirhandle), ATTR_IS_DIRECTORY, path);
+				result = OpenChain(GetChain(dirhandle), ATTR_IS_DIRECTORY, path);
 				if (result == RES_SUCCEEDED){
 					AddHandle(dirhandle);
 				}
@@ -770,9 +741,9 @@ namespace mfs{
 			RESULT_e result;
 			if (Mounted() == true){
 				if (Assigned(dirhandle) == true){
-					Manage_t &manage = GetManage(dirhandle);
+					Chain_t &chain = GetChain(dirhandle);
 					if (pinfo == nullptr){
-						return InitManage(manage);
+						return InitChain(chain);
 					}
 					else{
 						// 検索条件を作成し検索する
@@ -781,7 +752,7 @@ namespace mfs{
 						conditions.output_name_string = (uint16_t*)pinfo->name;
 						conditions.target_name_string = nullptr;
 						conditions.target_name_checksum = 0;
-						result = FindDir(manage, conditions, true);
+						result = FindDir(chain, conditions, true);
 						if (result == RES_SUCCEEDED){
 							// 検索結果を格納する
 							*(Property_t*)pinfo = (Property_t&)conditions.property;
@@ -815,7 +786,7 @@ namespace mfs{
 
 
 				// 指定されたファイルのディレクトリエントリを探す
-				result = FindDirEntry(GetManage(filehandle), ATTR_IS_FILE, path);
+				result = OpenChain(GetChain(filehandle), ATTR_IS_FILE, path);
 				if (result == RES_SUCCEEDED){
 					if (option & O_TRUNCATE){
 						
@@ -848,12 +819,12 @@ namespace mfs{
 			RESULT_e result;
 			if (Mounted() == true){
 				uint64_t size = filehandle.size();
-				if (GetManage(filehandle).flags & FLAG_WRITABLE){
+				if (GetChain(filehandle).flags & FLAG_WRITABLE){
 					if (size < offset) offset = size;
-					result = SeekCluster(GetManage(filehandle), offset);
+					result = SeekChain(GetChain(filehandle), offset);
 				}
 				else if (offset <= size){
-					result = SeekCluster(GetManage(filehandle), offset);
+					result = SeekChain(GetChain(filehandle), offset);
 				}
 				else{
 					// ファイルサイズを拡張する
@@ -880,7 +851,7 @@ namespace mfs{
 			if (Mounted() == true){
 				uint64_t remaining = filehandle.size() - filehandle.tell();
 				if (remaining < (uint64_t)length) length = (uint32_t)remaining;
-				if (ReadCluster(GetManage(filehandle), buf, length) != RES_SUCCEEDED){
+				if (ReadChain(GetChain(filehandle), buf, length) != RES_SUCCEEDED){
 					length = 0;
 				}
 			}
@@ -897,12 +868,12 @@ namespace mfs{
 
 	// ファイルへ書き込む
 	uint32_t ExFatFs::WriteFile(FileHandle &filehandle, const void *buf, uint32_t length){
-		if ((Writable() == true) && (GetManage(filehandle).flags & FLAG_WRITABLE)){
+		if ((Writable() == true) && (GetChain(filehandle).flags & FLAG_WRITABLE)){
 			if (lockMutex() == true){
 				if (Mounted() == true){
 					uint64_t pointer = filehandle.tell();
 					RESULT_e result;
-					result = WriteCluster(GetManage(filehandle), buf, length);
+					result = WriteChain(GetChain(filehandle), buf, length);
 					length = (uint32_t)(filehandle.tell() - pointer);
 				}
 				else{
@@ -917,20 +888,20 @@ namespace mfs{
 
 	// ファイルをフラッシュする
 	RESULT_e ExFatFs::FlushFile(FileHandle &filehandle){
-		if (Writable() == true){
-			if (lockMutex() == true){
-				RESULT_e result;
-				result = (Mounted() == false) ? RES_NOT_MOUNTED : GetManage(filehandle).pcache->Flush(m_pDiskIO);
-				unlockMutex();
-				return result;
-			}
-			else{
-				return RES_TIMEOUT;
+		if (REDUCE_CACHE == false){
+			if (Writable() == true){
+				if (lockMutex() == true){
+					RESULT_e result;
+					result = (Mounted() == false) ? RES_NOT_MOUNTED : GetChain(filehandle).pcache->Flush(m_pDiskIO);
+					unlockMutex();
+					return result;
+				}
+				else{
+					return RES_TIMEOUT;
+				}
 			}
 		}
-		else{
-			return RES_SUCCEEDED;
-		}
+		return RES_SUCCEEDED;
 	}
 
 	// ファイルを切り詰める
@@ -964,32 +935,25 @@ namespace mfs{
 
 
 
-	// クラスタへアクセスする前にManage_tを初期化する
-	RESULT_e ExFatFs::InitManage(Manage_t &manage){
-		manage.Init(&m_FATAndDirCache);
-		manage.current_cluster = manage.start_cluster;
-		return LoadFragment(manage, manage.current_cluster);
-	}
-
 	// フラグメントを把握する
-	RESULT_e ExFatFs::LoadFragment(Manage_t &manage, uint32_t start_cluster){
-		manage.frag_head_cluster = start_cluster;
+	RESULT_e ExFatFs::LoadFragment(Chain_t &chain, uint32_t start_cluster){
+		chain.frag_head_cluster = start_cluster;
 
 		if (start_cluster == INVALID_CLUSTER){
 			// ファイルが存在しない
-			manage.frag_tail_cluster = INVALID_CLUSTER;
-			manage.next_frag_cluster = INVALID_CLUSTER;
+			chain.frag_tail_cluster = INVALID_CLUSTER;
+			chain.next_frag_cluster = INVALID_CLUSTER;
 		}
-		else if (manage.flags & FLAG_CONTIGUOUS){
+		else if (chain.flags & FLAG_CONTIGUOUS){
 			// クラスタチェインが存在しない
-			manage.frag_tail_cluster = manage.start_cluster + RShiftCeilingPV64to32(manage.size, m_SectorsPerClusterShift) - 1;
-			manage.next_frag_cluster = INVALID_CLUSTER;
+			chain.frag_tail_cluster = chain.start_cluster + RShiftCeilingPV64to32(chain.size, m_SectorsPerClusterShift) - 1;
+			chain.next_frag_cluster = INVALID_CLUSTER;
 		}
 		else{
 			// start_clusterの含まれるFATの一部をキャッシュする
 			RESULT_e result;
 			uint32_t sector_addr = m_FATOffset + (start_cluster >> (m_BytesPerSectorShift - 2));
-			result = manage.pcache->ReadTo(m_pDiskIO, sector_addr);
+			result = m_FATAndDirCache.ReadTo(m_pDiskIO, sector_addr);
 			if (result != RES_SUCCEEDED){
 				return result;
 			}
@@ -1000,94 +964,175 @@ namespace mfs{
 			while (true){
 				//uint32_t mask = (m_SectorSize / 4) - 1;
 				uint32_t mask = (1UL << (m_BytesPerSectorShift - 2)) - 1;
-				next_cluster = LoadLE32(manage.pcache->GetBuffer(4 * (cluster & mask)));
+				next_cluster = LoadLE32(m_FATAndDirCache.GetBuffer(4 * (cluster & mask)));
 				if (IsValidCluster(next_cluster) == false){
 					// 次のクラスタが終端ならフラグメントの終端
 					next_cluster = INVALID_CLUSTER;
 					break;
 				}
-				if ((cluster & mask) == mask){
+				/*if ((cluster & mask) == mask){
 					// セクターの境界を跨いだらフラグメントの終端として扱う(適当なところで切ってLoadFragment()の実行時間を抑えるため)
 					break;
-				}
+				}*/
 				if ((cluster + 1) != next_cluster){
 					// クラスタが不連続ならフラグメントの終端
 					break;
 				}
 				cluster++;
 			}
-			manage.frag_tail_cluster = cluster;
-			manage.next_frag_cluster = next_cluster;
+			chain.frag_tail_cluster = cluster;
+			chain.next_frag_cluster = next_cluster;
 		}
 
 		return RES_SUCCEEDED;
 	}
 
+	// クラスタへアクセスする前にChain_tを初期化する
+	RESULT_e ExFatFs::InitChain(Chain_t &chain){
+		chain.Init(&m_FATAndDirCache);
+		chain.current_cluster = chain.start_cluster;
+		return LoadFragment(chain, chain.current_cluster);
+	}
+
+	// クラスタチェインを開く
+	RESULT_e ExFatFs::OpenChain(Chain_t &chain, uint32_t attributes, const fschar_t *path){
+		// ルートディレクトリを開く
+		chain.flags = ATTR_DIRECTORY;
+		chain.start_cluster = m_RootDirEntryCluster;
+		chain.size = 0;
+		chain.entry_flags = ATTR_DIRECTORY;
+		chain.entry_cluster = 0;
+		chain.entry_offset = 0;
+
+		// パスをリストに変換
+		uint16_t path_list[MAXIMUM_PATH + 1];
+		if (ConvertPathToList(path_list, path) == false){
+			// パスの形式が不正だった
+			return RES_INVALID_NAME;
+		}
+		else{
+			if (path_list[0] == 0x0000){
+				// ルートディレクトリ
+				if ((ATTR_DIRECTORY & (attributes >> 16)) != (attributes & 0xFFFF)){
+					// アトリビュートが一致しない
+					return RES_NOT_FOUND;
+				}
+			}
+			else{
+				// それ以外のディレクトリ
+				uint16_t *p = path_list;
+				uint16_t *name = path_list;
+				uint32_t length = 0;
+				uint16_t checksum = 0;
+				CONDITION_t cond;
+				cond.attributes = attributes;
+				cond.output_name_string = nullptr;
+				while (true){
+					uint16_t c = *p++;
+					if (c == 0x0000){
+						if (length == 0){
+							break;
+						}
+
+						// 検索条件を作成
+						cond.target_name_string = name;
+						cond.target_name_checksum = checksum;
+
+						// ディレクトリエントリを検索する
+						RESULT_e result;
+						result = InitChain(chain);
+						if (result != RES_SUCCEEDED){
+							return result;
+						}
+						result = FindDir(chain, cond, (*p == 0x0000));	// リストの最後の項目だったらプロパティを要求する
+						if (result != RES_SUCCEEDED){
+							return result;
+						}
+						(DirEntry_t&)chain = cond.direntry;
+
+						name = p;
+						length = 0;
+						checksum = 0;
+					}
+					else{
+						// ファイル名のチェックサムを計算する
+						checksum = CalcChecksum16(checksum, (uint8_t)c);
+						checksum = CalcChecksum16(checksum, (uint8_t)(c >> 8));
+
+						length++;
+					}
+				}
+			}
+		}
+
+		return InitChain(chain);
+	}
+
 	// ポインタをシークする
-	RESULT_e ExFatFs::SeekCluster(Manage_t &manage, uint64_t offset){
-		if (manage.start_cluster == INVALID_CLUSTER){
+	RESULT_e ExFatFs::SeekChain(Chain_t &chain, uint64_t offset){
+		if (chain.start_cluster == INVALID_CLUSTER){
 			return RES_INTERNAL_ERROR;
 		}
 		else{
 			RESULT_e result;
 			uint32_t bytes_per_cluster = 1UL << (m_BytesPerSectorShift + m_SectorsPerClusterShift);
-			uint32_t pointer_lapped_cluster = (uint32_t)manage.pointer & (bytes_per_cluster - 1);
+			uint32_t pointer_lapped_cluster = (uint32_t)chain.pointer & (bytes_per_cluster - 1);
 			uint32_t offset_lapped_cluster = (uint32_t)offset & (bytes_per_cluster - 1);
 
-			if (offset == manage.pointer){
+			if (offset == chain.pointer){
 				// ポインタは動かない
 				return RES_SUCCEEDED;
 			}
-			else if (offset < manage.pointer){
+			else if (offset < chain.pointer){
 				// ポインタは後退する
-				if (manage.current_cluster != INVALID_CLUSTER){
+				if (chain.current_cluster != INVALID_CLUSTER){
 					// シーク先が現在のフラグメントの中にあるか
-					uint32_t back = (uint32_t)((manage.pointer - offset) >> (m_SectorsPerClusterShift + m_BytesPerSectorShift));
+					uint32_t back = (uint32_t)((chain.pointer - offset) >> (m_SectorsPerClusterShift + m_BytesPerSectorShift));
 					if (pointer_lapped_cluster < offset_lapped_cluster){
 						back++;
 					}
-					if (manage.frag_head_cluster <= (manage.current_cluster - back)){
+					if (chain.frag_head_cluster <= (chain.current_cluster - back)){
 						// シーク先は現在のフラグメント中にある
-						manage.current_cluster -= back;
-						manage.pointer = offset;
+						chain.current_cluster -= back;
+						chain.pointer = offset;
 						return RES_SUCCEEDED;
 					}
 				}
 
 				// シーク先は現在のフラグメント中にない
 				// ポインタをクラスタチェインの最初に戻しシークしなおす
-				manage.current_cluster = manage.start_cluster;
-				manage.pointer = 0;
-				result = LoadFragment(manage, manage.current_cluster);
+				chain.current_cluster = chain.start_cluster;
+				chain.pointer = 0;
+				result = LoadFragment(chain, chain.current_cluster);
 				if (result != RES_SUCCEEDED){
 					return result;
 				}
 			}
 
 			// ポインタは前進する
-			if (manage.current_cluster == INVALID_CLUSTER){
+			if (chain.current_cluster == INVALID_CLUSTER){
 				// ポインタはクラスタチェインの終端に達している
 				return RES_NO_DATA;
 			}
 			else{
 				// クラスタチェインを目的のクラスタ数だけ辿る
-				uint32_t forward = (uint32_t)((offset - manage.pointer) >> (m_SectorsPerClusterShift + m_BytesPerSectorShift));
+				uint32_t forward = (uint32_t)((offset - chain.pointer) >> (m_SectorsPerClusterShift + m_BytesPerSectorShift));
 				if (offset_lapped_cluster < pointer_lapped_cluster){
 					forward++;
 				}
-				manage.pointer = offset;
+				chain.pointer = offset;
 				while (true){
-					uint32_t diff = manage.frag_tail_cluster - manage.current_cluster + 1;
+					uint32_t diff = chain.frag_tail_cluster - chain.current_cluster + 1;
 					if (forward < diff){
 						// シーク先は現在のフラグメント中にある
-						manage.current_cluster += forward;
+						chain.current_cluster += forward;
 						return RES_SUCCEEDED;
 					}
 					else{
 						// シーク先は現在のフラグメント中にない。次のフラグメントへ移動する
 						forward -= diff;
-						manage.current_cluster = manage.next_frag_cluster;
-						result = LoadFragment(manage, manage.current_cluster);
+						chain.current_cluster = chain.next_frag_cluster;
+						result = LoadFragment(chain, chain.current_cluster);
 						if (result != RES_SUCCEEDED){
 							return result;
 						}
@@ -1097,27 +1142,41 @@ namespace mfs{
 		}
 	}
 
-	// クラスタチェインを読み出す
-	RESULT_e ExFatFs::ReadCluster(Manage_t &manage, void *buf, uint32_t length){
-		if (manage.start_cluster == INVALID_CLUSTER){
+	// クラスタチェインをキャッシュする
+	RESULT_e ExFatFs::CacheChain(Chain_t &chain){
+		if (chain.start_cluster == INVALID_CLUSTER){
 			return RES_INTERNAL_ERROR;
 		}
-		if (manage.current_cluster == INVALID_CLUSTER){
+		if (chain.current_cluster == INVALID_CLUSTER){
+			// 読み出せるデータがない
+			return RES_NO_DATA;
+		}
+
+		uint32_t sector_in_cluster = ((uint32_t)chain.pointer >> m_BytesPerSectorShift) & ((1UL << m_SectorsPerClusterShift) - 1);	// クラスタ内でのセクター番号
+		uint32_t sector_addr = m_ClusterOffset + (chain.current_cluster << m_SectorsPerClusterShift) + sector_in_cluster;
+		return chain.pcache->ReadTo(m_pDiskIO, sector_addr);
+	}
+
+	// クラスタチェインを読み出す
+	RESULT_e ExFatFs::ReadChain(Chain_t &chain, void *buf, uint32_t length){
+		if (chain.start_cluster == INVALID_CLUSTER){
+			return RES_INTERNAL_ERROR;
+		}
+		if (chain.current_cluster == INVALID_CLUSTER){
 			// 読み出せるデータがない
 			return RES_NO_DATA;
 		}
 
 		RESULT_e result;
-		uint32_t sector_in_cluster = ((uint32_t)manage.pointer >> m_BytesPerSectorShift) & ((1UL << m_SectorsPerClusterShift) - 1);	// クラスタ内でのセクター番号
-		uint32_t offset_in_sector = (uint32_t)manage.pointer & ((1UL << m_BytesPerSectorShift) - 1);							// セクター内でのオフセット
+		uint32_t sector_in_cluster = ((uint32_t)chain.pointer >> m_BytesPerSectorShift) & ((1UL << m_SectorsPerClusterShift) - 1);	// クラスタ内でのセクター番号
+		uint32_t offset_in_sector = (uint32_t)chain.pointer & ((1UL << m_BytesPerSectorShift) - 1);		// セクター内でのオフセット
 		while (0 < length){
 			bool next_cluster = false;
 			uint32_t read_bytes = 0;
 
-			uint32_t sector_addr = m_ClusterOffset + (manage.current_cluster << m_SectorsPerClusterShift) + sector_in_cluster;
+			uint32_t sector_addr = m_ClusterOffset + (chain.current_cluster << m_SectorsPerClusterShift) + sector_in_cluster;
 			if (offset_in_sector == 0){
 				// シークポインタはセクターの境界
-				//if ((1UL << m_BytesPerSectorShift) <= length){
 				if (0 < (length >> m_BytesPerSectorShift)){
 					// バッファがセクターサイズ以上あるため、セクターをバッファに直接読み込む
 					result = m_pDiskIO->disk_read(buf, sector_addr, 1);
@@ -1130,7 +1189,7 @@ namespace mfs{
 				}
 				else{
 					// セクターをキャッシュに読み込んでからバッファに転送する
-					result = manage.pcache->ReadWith(m_pDiskIO, sector_addr, buf, 0, length);
+					result = chain.pcache->ReadWith(m_pDiskIO, sector_addr, buf, 0, length);
 					if (result != RES_SUCCEEDED){
 						return result;
 					}
@@ -1143,7 +1202,7 @@ namespace mfs{
 				read_bytes = (length < last_bytes) ? length : last_bytes;
 
 				// キャッシュを通してバッファに転送する
-				result = manage.pcache->ReadWith(m_pDiskIO, sector_addr, buf, offset_in_sector, read_bytes);
+				result = chain.pcache->ReadWith(m_pDiskIO, sector_addr, buf, offset_in_sector, read_bytes);
 				if (result != RES_SUCCEEDED){
 					return result;
 				}
@@ -1153,21 +1212,21 @@ namespace mfs{
 
 			buf = (uint8_t*)buf + read_bytes;
 			length -= read_bytes;
-			manage.pointer += read_bytes;
+			chain.pointer += read_bytes;
 
 			if (next_cluster == true){
 				// 次のクラスタへ移動する
-				if (manage.current_cluster == manage.frag_tail_cluster){
+				if (chain.current_cluster == chain.frag_tail_cluster){
 					// 現在のクラスタはフラグメントの最後のクラスタであるため、次のフラグメントを読み込む
-					manage.current_cluster = manage.next_frag_cluster;
-					result = LoadFragment(manage, manage.next_frag_cluster);
+					chain.current_cluster = chain.next_frag_cluster;
+					result = LoadFragment(chain, chain.next_frag_cluster);
 					if (result != RES_SUCCEEDED){
 						return result;
 					}
 				}
 				else{
 					// フラグメント内の次のクラスタに移動する
-					manage.current_cluster++;
+					chain.current_cluster++;
 				}
 			}
 		}
@@ -1176,16 +1235,59 @@ namespace mfs{
 	}
 
 	// クラスタチェインへ書き込む
-	RESULT_e ExFatFs::WriteCluster(Manage_t &manage, const void *buf, uint32_t length){
+	RESULT_e ExFatFs::WriteChain(Chain_t &chain, const void *buf, uint32_t length){
+		return RES_NOT_SUPPORTED;
+	}
+
+	// クラスタチェインを作成する
+	RESULT_e ExFatFs::CreateChain(Chain_t &chain, uint32_t current_cluster, uint32_t next_cluster){
+		
+
+		if (chain.flags & FLAG_CONTIGUOUS){
+			if ((current_cluster + 1) == next_cluster){
+
+			}
+			else{
+
+			}
+
+
+
+		}
+		else{
+
+
+		}
+
+
+
+
 		return RES_NOT_SUPPORTED;
 	}
 
 	// クラスタチェインを削除する
-	RESULT_e ExFatFs::DeleteCluster(Manage_t &manage){
+	RESULT_e ExFatFs::DeleteChain(Chain_t &chain, uint32_t start_cluster){
+		RESULT_e result;
+		uint32_t current_cluster = start_cluster;
+		uint32_t cluster_count;
+		while (current_cluster != INVALID_CLUSTER){
+			// フラグメントを読み取る
+			result = LoadFragment(chain, current_cluster);
+			if (result != RES_SUCCEEDED){
+				return result;
+			}
 
+			// クラスタ割り当てビットマップの当該領域をクリア
+			cluster_count = chain.frag_tail_cluster - current_cluster + 1;
+			result = FillAllocationBitmap(current_cluster, cluster_count, false);
+			if (result != RES_SUCCEEDED){
+				return result;
+			}
 
+			current_cluster = chain.next_frag_cluster;
+		}
 
-		return RES_NOT_SUPPORTED;
+		return RES_SUCCEEDED;
 	}
 
 
@@ -1194,12 +1296,12 @@ namespace mfs{
 	RESULT_e ExFatFs::FindSpecialDirEntry(void){
 		RESULT_e result;
 
-		// ルートディレクトリのManage_tを作成
-		Manage_t manage;
-		manage.flags = 0;
-		manage.start_cluster = m_RootDirEntryCluster;
-		manage.size = 0;
-		result = InitManage(manage);
+		// ルートディレクトリのChain_tを作成
+		Chain_t chain;
+		chain.flags = 0;
+		chain.start_cluster = m_RootDirEntryCluster;
+		chain.size = 0;
+		result = InitChain(chain);
 		if (result != RES_SUCCEEDED){
 			return result;
 		}
@@ -1207,7 +1309,7 @@ namespace mfs{
 		uint8_t entry[DIR_ENTRY_LENGTH];
 		while (true){
 			// ディレクトリエントリを1つ読み取る
-			result = ReadCluster(manage, entry, DIR_ENTRY_LENGTH);
+			result = ReadChain(chain, entry, DIR_ENTRY_LENGTH);
 			if (result != RES_SUCCEEDED){
 				return result;
 			}
@@ -1238,8 +1340,7 @@ namespace mfs{
 	}
 
 	// 条件に一致するディレクトリを検索する
-	RESULT_e ExFatFs::FindDir(Manage_t &manage, CONDITION_t &conditions, bool detail){
-		uint8_t entry[DIR_ENTRY_LENGTH];
+	RESULT_e ExFatFs::FindDir(Chain_t &chain, CONDITION_t &conditions, bool detail){
 		bool matched = false;					// 今のところ条件に一致している
 		uint16_t *output_name_string;			// 出力中のファイル・ディレクトリ名
 		const uint16_t *testing_name_string;	// 比較中のファイル・ディレクトリ名
@@ -1250,8 +1351,9 @@ namespace mfs{
 		while (true){
 			// ディレクトリエントリを1つ読み取る
 			RESULT_e result;
-			uint32_t offset = (uint32_t)manage.pointer / DIR_ENTRY_LENGTH;
-			result = ReadCluster(manage, entry, DIR_ENTRY_LENGTH);
+			uint32_t offset = (uint32_t)chain.pointer / DIR_ENTRY_LENGTH;
+			uint8_t entry[DIR_ENTRY_LENGTH];
+			result = ReadChain(chain, entry, DIR_ENTRY_LENGTH);
 			if (result != RES_SUCCEEDED){
 				return result;
 			}
@@ -1270,10 +1372,10 @@ namespace mfs{
 						conditions.property.creation_time = LoadLE32(entry + 8);
 						conditions.property.modified_time = LoadLE32(entry + 12);
 						conditions.property.accessed_time = LoadLE32(entry + 16);
-						conditions.managebase.flags = conditions.property.attributes;
-						conditions.managebase.entry_flags = manage.flags;
-						conditions.managebase.entry_cluster = manage.start_cluster;
-						conditions.managebase.entry_offset = offset;
+						conditions.direntry.flags = conditions.property.attributes;
+						conditions.direntry.entry_flags = chain.flags;
+						conditions.direntry.entry_cluster = chain.start_cluster;
+						conditions.direntry.entry_offset = offset;
 					}
 
 					if (CHECK_CHECKSUM == true){
@@ -1297,11 +1399,11 @@ namespace mfs{
 					testing_name_length = entry[3];
 					testing_name_count = 0;
 					if (entry[1] & 0x2){
-						conditions.managebase.flags |= FLAG_CONTIGUOUS;
+						conditions.direntry.flags |= FLAG_CONTIGUOUS;
 					}
-					conditions.managebase.start_cluster = LoadLE32(entry + 20);
-					conditions.managebase.size = LoadLE64(entry + 24);
-					conditions.property.size = conditions.managebase.size;
+					conditions.direntry.start_cluster = LoadLE32(entry + 20);
+					conditions.direntry.size = LoadLE64(entry + 24);
+					conditions.property.size = conditions.direntry.size;
 
 					if (CHECK_CHECKSUM == true){
 						// ディレクトリエントリのチェックサムを計算する
@@ -1359,80 +1461,6 @@ namespace mfs{
 		}
 	}
 
-	// ディレクトリエントリを検索する
-	RESULT_e ExFatFs::FindDirEntry(Manage_t &manage, uint32_t attributes, const fschar_t *path){
-		// ルートディレクトリをセット
-		manage.flags = ATTR_DIRECTORY;
-		manage.start_cluster = m_RootDirEntryCluster;
-		manage.size = 0;
-		manage.entry_flags = ATTR_DIRECTORY;
-		manage.entry_cluster = 0;
-		manage.entry_offset = 0;
-
-		// パスをリストに変換
-		uint16_t path_list[MAXIMUM_PATH + 1];
-		if (ConvertPathToList(path_list, path) == false){
-			// パスの形式が不正だった
-			return RES_INVALID_NAME;
-		}
-		else{
-			if (path_list[0] == 0x0000){
-				// ルートディレクトリ
-				if ((ATTR_DIRECTORY & (attributes >> 16)) != (attributes & 0xFFFF)){
-					// アトリビュートが一致しない
-					return RES_NOT_FOUND;
-				}
-			}
-			else{
-				// それ以外のディレクトリ
-				uint16_t *p = path_list;
-				uint16_t *name = path_list;
-				uint32_t length = 0;
-				uint16_t checksum = 0;
-				CONDITION_t cond;
-				cond.attributes = attributes;
-				cond.output_name_string = nullptr;
-				while (true){
-					uint16_t c = *p++;
-					if (c == 0x0000){
-						if (length == 0){
-							break;
-						}
-
-						// 検索条件を作成
-						cond.target_name_string = name;
-						cond.target_name_checksum = checksum;
-
-						// ディレクトリエントリを検索する
-						RESULT_e result;
-						result = InitManage(manage);
-						if (result != RES_SUCCEEDED){
-							return result;
-						}
-						result = FindDir(manage, cond, (*p == 0x0000));	// リストの最後の項目だったらプロパティを要求する
-						if (result != RES_SUCCEEDED){
-							return result;
-						}
-						(ManageBase_t&)manage = cond.managebase;
-
-						name = p;
-						length = 0;
-						checksum = 0;
-					}
-					else{
-						// ファイル名のチェックサムを計算する
-						checksum = CalcChecksum16(checksum, (uint8_t)c);
-						checksum = CalcChecksum16(checksum, (uint8_t)(c >> 8));
-
-						length++;
-					}
-				}
-			}
-		}
-
-		return InitManage(manage);
-	}
-
 	// 空きクラスタを検索する
 	RESULT_e ExFatFs::FindFreeClusters(uint32_t start_cluster, uint32_t &found_cluster, uint32_t &contiguous_clusters){
 		RESULT_e result;
@@ -1441,34 +1469,36 @@ namespace mfs{
 			return RES_NOT_FOUND;
 		}
 
-		// 検索を始めるところにシークする
-		uint32_t offset = (start_cluster >> 3) & ~(ALLOC_BITMAP_UNIT - 1);	// offsetをALLOC_BITMAP_UNITの倍数にする
-		result = SeekCluster(m_AllocBitmapManage, offset);
-		if (result != RES_SUCCEEDED){
-			return result;
-		}
-
 		// ビットマップを読み取り、空きクラスタを探す
+		uint32_t bytes_per_sector = 1UL << m_BytesPerSectorShift;
+		uint32_t bits_per_sector = 8UL << m_BytesPerSectorShift;
+		uint32_t offset = (start_cluster >> 3) & ~(bytes_per_sector - 1);	// offsetをセクター境界にそろえる
 		uint32_t cluster = start_cluster;
 		uint32_t contiguous_zeros = 0;
 		uint32_t remaining_cluster_count = m_ClusterCount - start_cluster;
-		uint32_t skip_bits = start_cluster & (ALLOC_BITMAP_UNIT * 8 - 1);
+		uint32_t skip_bits = start_cluster & (bits_per_sector - 1);
+		uint8_t *bitmap = (uint8_t*)m_AllocBitmapCache.GetBuffer(0);	// ビットマップはキャッシュメモリーから直接取得する
 		do{
-			// ALLOC_BITMAP_UNITバイトだけ読み取る
-			uint8_t bitmap[ALLOC_BITMAP_UNIT];
-			result = ReadCluster(m_AllocBitmapManage, bitmap, ALLOC_BITMAP_UNIT);
+			// シークしてキャッシュする
+			result = SeekChain(m_AllocBitmapChain, offset);
 			if (result != RES_SUCCEEDED){
 				return result;
 			}
+			result = CacheChain(m_AllocBitmapChain);
+			if (result != RES_SUCCEEDED){
+				return result;
+			}
+			offset += bytes_per_sector;
 
 			// 空きクラスタを探す
 			uint32_t *p = (uint32_t*)bitmap + skip_bits / 32;
-			uint32_t *p_end = (uint32_t*)bitmap + ALLOC_BITMAP_UNIT / 4;
-			uint32_t count = ALLOC_BITMAP_UNIT * 8 - skip_bits;
+			uint32_t *p_end = (uint32_t*)bitmap + bits_per_sector / 32;
+			uint32_t count = bits_per_sector - skip_bits;
 			if (skip_bits != 0){
 				skip_bits = 0;
-				*p |= ((1UL << (cluster & 0x1F)) - 1);
+				*p |= NEtoLE32((1UL << (cluster & 0x1F)) - 1);
 				cluster &= ~0x1F;
+				m_AllocBitmapCache.Kill();	// 処理の簡便化のためだけにキャッシュの内容を書き換えたのでデータを無効化しておく
 			}
 			if (count < remaining_cluster_count){
 				remaining_cluster_count -= count;
@@ -1477,7 +1507,7 @@ namespace mfs{
 				remaining_cluster_count = 0;
 			}
 			while (p < p_end){
-				uint32_t bit = ~*p++;
+				uint32_t bit = ~LoadLE32(p++);
 				uint32_t sr = bit;
 				if (contiguous_zeros == 0){
 					if (bit == 0){
@@ -1498,7 +1528,7 @@ namespace mfs{
 					goto finish;
 				}
 			}
-		}while (0 < remaining_cluster_count);
+		} while (0 < remaining_cluster_count);
 	finish:
 		if (m_ClusterCount <= cluster){
 			return RES_NOT_FOUND;
@@ -1513,9 +1543,134 @@ namespace mfs{
 		}
 	}
 
+	// クラスタ割り当てビットマップの値を変更する
+	RESULT_e ExFatFs::FillAllocationBitmap(uint32_t start_cluster, uint32_t number_of_clusters, bool value){
+		RESULT_e result;
+		if (start_cluster < MINIMUM_VALID_CLUSTER){
+			return RES_INTERNAL_ERROR;
+		}
+		start_cluster -= MINIMUM_VALID_CLUSTER;
+		if (m_ClusterCount <= start_cluster){
+			return RES_INTERNAL_ERROR;
+		}
+		if ((m_ClusterCount - start_cluster) < number_of_clusters){
+			return RES_INTERNAL_ERROR;
+		}
+
+		// ビットマップを読み取り、値を書き換える
+		uint32_t bytes_per_sector = 1UL << m_BytesPerSectorShift;
+		uint32_t bits_per_sector = 8UL << m_BytesPerSectorShift;
+		uint32_t offset = (start_cluster >> 3) & ~(bytes_per_sector - 1);	// offsetをセクター境界にそろえる
+		uint32_t cluster = start_cluster;
+		uint32_t skip_bits = cluster & (bits_per_sector - 1);
+		uint8_t *bitmap = (uint8_t*)m_AllocBitmapCache.GetBuffer(0);	// ビットマップはキャッシュメモリーから直接取得する
+		do{
+			// シークしてキャッシュする
+			result = SeekChain(m_AllocBitmapChain, offset);
+			if (result != RES_SUCCEEDED){
+				return result;
+			}
+			result = CacheChain(m_AllocBitmapChain);
+			if (result != RES_SUCCEEDED){
+				return result;
+			}
+
+			// ビットをセット・クリアする
+			uint32_t *p = (uint32_t*)bitmap + skip_bits / 32;
+			uint32_t *p_end;
+			uint32_t head = skip_bits & 0x1F;
+			uint32_t tail;
+			if ((skip_bits + number_of_clusters) < bits_per_sector){
+				tail = (skip_bits + number_of_clusters) & 0x1F;
+				p_end = (uint32_t*)bitmap + (skip_bits + number_of_clusters) / 32;
+				number_of_clusters = 0;
+			}
+			else{
+				tail = 0;
+				p_end = (uint32_t*)bitmap + bits_per_sector / 32;
+				number_of_clusters -= bits_per_sector - skip_bits;
+			}
+			skip_bits = 0;
+			uint32_t head_mask = NEtoLE32(0xFFFFFFFFUL << head);
+			uint32_t tail_mask = NEtoLE32(0xFFFFFFFFUL << tail);
+			if (p == p_end){
+				*p = value ? (*p | (head_mask & ~tail_mask)) : (*p & (~head_mask | tail_mask));
+			}
+			else{
+				*p = value ? (*p | head_mask) : (*p & ~head_mask);
+				p++;
+				if (0 < tail){
+					*p_end = value ? (*p_end | ~tail_mask) : (*p_end & tail_mask);
+				}
+			}
+
+			if (value == true){
+				while (p < p_end){
+					*p++ = 0xFFFFFFFFUL;
+				}
+			}
+			else{
+				while (p < p_end){
+					*p++ = 0x00000000UL;
+				}
+			}
+			
+			// 書き換えたことにする
+			m_AllocBitmapCache.SetModified(true);
+			offset += bytes_per_sector;
+		} while (0 < number_of_clusters);
+
+		return RES_SUCCEEDED;
+	}
 
 
 
+	// ディレクトリエントリを作成する
+	RESULT_e ExFatFs::Link(DirHandle &dirhandle, DirEntry_t &direntry, FileInfo_t &info){
+
+
+		return RES_NOT_SUPPORTED;
+	}
+
+	// ディレクトリエントリを削除する
+	RESULT_e ExFatFs::Unlink(Chain_t &dirchain, uint32_t target_offset){
+		// ディレクトリエントリのある場所にシーク
+		RESULT_e result;
+		result = SeekChain(dirchain, target_offset);
+		if (result != RES_SUCCEEDED){
+			return result;
+		}
+
+		uint32_t offset = target_offset;
+		while (true){
+			// ディレクトリエントリを読み取る
+			uint8_t entry[DIR_ENTRY_LENGTH];
+			result = ReadChain(dirchain, entry, DIR_ENTRY_LENGTH);
+			if (result != RES_SUCCEEDED){
+				return result;
+			}
+
+			uint8_t entry_type = entry[0];
+			if ((~entry_type & 0x80) || ((entry_type == 0x85) && (offset != target_offset))){
+				// ディレクトリの終端に達するか次の項目が現れたので終了
+				break;
+			}
+
+			// 使用中フラグをクリアして書き込む
+			entry[0] = entry_type & ~0x80;
+			result = SeekChain(dirchain, offset);
+			if (result != RES_SUCCEEDED){
+				return result;
+			}
+			result = WriteChain(dirchain, entry, DIR_ENTRY_LENGTH);
+			if (result != RES_SUCCEEDED){
+				return result;
+			}
+			offset += DIR_ENTRY_LENGTH;
+		}
+
+		return RES_SUCCEEDED;
+	}
 
 
 

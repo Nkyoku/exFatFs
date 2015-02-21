@@ -39,8 +39,8 @@ namespace mfs{
 		// クラスタ割り当てビットマップのあるクラスタ番号
 		uint32_t m_AllocBitmapCluster;
 
-		// クラスタ割り当てビットマップにアクセスするための構造体
-		Manage_t m_AllocBitmapManage;
+		// クラスタ割り当てビットマップのクラスタチェイン
+		Chain_t m_AllocBitmapChain;
 
 		// クラスタ割り当てビットマップのキャッシュ
 		Cache m_AllocBitmapCache;
@@ -118,24 +118,35 @@ namespace mfs{
 		virtual RESULT_e TruncateFile(FileHandle &filehandle) override;
 
 
-	protected:
-		// クラスタへアクセスする前にManage_tを初期化する
-		RESULT_e InitManage(Manage_t &manage);
 
+	protected:
 		// フラグメントを把握する
-		RESULT_e LoadFragment(Manage_t &manage, uint32_t start_cluster);
+		RESULT_e LoadFragment(Chain_t &chain, uint32_t start_cluster);
+		
+		// クラスタへアクセスする前にChain_tを初期化する
+		RESULT_e InitChain(Chain_t &chain);
+
+		// クラスタチェインを開く
+		RESULT_e OpenChain(Chain_t &chain, uint32_t attributes, const fschar_t *path);
 
 		// ポインタをシークする
-		RESULT_e SeekCluster(Manage_t &manage, uint64_t offset);
+		RESULT_e SeekChain(Chain_t &chain, uint64_t offset);
+
+		// クラスタチェインをキャッシュする
+		RESULT_e CacheChain(Chain_t &chain);
 
 		// クラスタチェインを読み出す
-		RESULT_e ReadCluster(Manage_t &manage, void *buf, uint32_t length);
+		RESULT_e ReadChain(Chain_t &chain, void *buf, uint32_t length);
 
 		// クラスタチェインへ書き込む
-		RESULT_e WriteCluster(Manage_t &manage, const void *buf, uint32_t length);
+		RESULT_e WriteChain(Chain_t &chain, const void *buf, uint32_t length);
+
+		// クラスタチェインを作成する
+		RESULT_e CreateChain(Chain_t &chain, uint32_t current_cluster, uint32_t next_cluster);
 
 		// クラスタチェインを削除する
-		RESULT_e DeleteCluster(Manage_t &manage);
+		RESULT_e DeleteChain(Chain_t &chain, uint32_t start_cluster);
+
 
 
 	protected:
@@ -143,14 +154,22 @@ namespace mfs{
 		RESULT_e FindSpecialDirEntry(void);
 
 		// 条件に一致するディレクトリを検索する
-		RESULT_e FindDir(Manage_t &manage, CONDITION_t &conditions, bool detail);
-
-		// ディレクトリエントリを検索する
-		RESULT_e FindDirEntry(Manage_t &manage, uint32_t attributes, const fschar_t *path);
+		RESULT_e FindDir(Chain_t &chain, CONDITION_t &conditions, bool detail);
 
 		// 空きクラスタを検索する
 		RESULT_e FindFreeClusters(uint32_t start_cluster, uint32_t &found_cluster, uint32_t &contiguous_clusters);
 
+		// クラスタ割り当てビットマップの値を変更する
+		RESULT_e FillAllocationBitmap(uint32_t start_cluster, uint32_t number_of_clusters, bool value);
+
+
+
+	protected:
+		// ディレクトリエントリを作成する
+		RESULT_e Link(DirHandle &dirhandle, DirEntry_t &direntry, FileInfo_t &info);
+
+		// ディレクトリエントリを削除する
+		RESULT_e Unlink(Chain_t &dirchain, uint32_t target_offset);
 
 
 

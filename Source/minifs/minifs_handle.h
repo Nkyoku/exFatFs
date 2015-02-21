@@ -29,12 +29,12 @@ namespace mfs{
 		// 連結リストの次のハンドルのポインタ
 		IMiniFSHandle *m_pNextHandle;
 
-		// 管理情報
-		Manage_t m_Manage;
+		// クラスタチェイン
+		Chain_t m_Chain;
 
 	protected:
 		// コンストラクタ
-		IMiniFSHandle(void) : m_pFileSystem(&NullFs), m_pPreviousHandle(nullptr), m_pNextHandle(nullptr), m_Manage(){}
+		IMiniFSHandle(void) : m_pFileSystem(&NullFs), m_pPreviousHandle(nullptr), m_pNextHandle(nullptr), m_Chain(){}
 	};
 }
 

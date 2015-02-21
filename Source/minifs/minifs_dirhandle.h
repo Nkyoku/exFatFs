@@ -13,11 +13,11 @@ namespace mfs{
 
 	private:
 		// ディレクトリ管理情報
-		DirManage_t m_DirManage;
+		//DirManage_t m_DirManage;
 
 	public:
 		// コンストラクタ
-		DirHandle(void) : IMiniFSHandle(), m_DirManage(){}
+		DirHandle(void) : IMiniFSHandle()/*, m_DirManage()*/{}
 
 		// デストラクタ
 		~DirHandle(){

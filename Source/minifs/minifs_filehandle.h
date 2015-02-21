@@ -17,11 +17,11 @@ namespace mfs{
 		Cache m_Cache;
 
 		// ファイル管理情報
-		FileManage_t m_FileManage;
+		//FileManage_t m_FileManage;
 
 	public:
 		// コンストラクタ
-		FileHandle(void) : IMiniFSHandle(), m_Cache(), m_FileManage(){}
+		FileHandle(void) : IMiniFSHandle(), m_Cache()/*, m_FileManage()*/{}
 
 		// デストラクタ
 		~FileHandle(){
@@ -38,7 +38,9 @@ namespace mfs{
 				result = filesystem.OpenFile(*this, path, option);
 				if (result == RES_SUCCEEDED){
 					m_pFileSystem = &filesystem;
-					m_Manage.pcache = &m_Cache;
+					if (REDUCE_CACHE == false){
+						m_Chain.pcache = &m_Cache;
+					}
 				}
 			}
 			return result;
@@ -47,7 +49,9 @@ namespace mfs{
 		// ファイルを閉じる
 		RESULT_e close(void){
 			RESULT_e result;
-			flush();
+			if (REDUCE_CACHE == false){
+				flush();
+			}
 			result = m_pFileSystem->CloseFile(*this);
 			if (result == RES_SUCCEEDED){
 				m_pFileSystem = &NullFs;
@@ -72,7 +76,7 @@ namespace mfs{
 
 		// ファイルをフラッシュする
 		RESULT_e flush(void){
-			return m_pFileSystem->FlushFile(*this);
+			return (REDUCE_CACHE == false) ? m_pFileSystem->FlushFile(*this) : RES_SUCCEEDED;
 		}
 
 		// ファイルを切り詰める
@@ -82,12 +86,12 @@ namespace mfs{
 
 		// ファイルサイズを取得する
 		uint64_t size(void){
-			return m_Manage.size;
+			return m_Chain.size;
 		}
 
 		// ファイルポインタの位置を取得する
 		uint64_t tell(void){
-			return m_Manage.pointer;
+			return m_Chain.pointer;
 		}
 
 

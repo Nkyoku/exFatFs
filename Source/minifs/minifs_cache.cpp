@@ -8,8 +8,13 @@ namespace mfs{
 	RESULT_e Cache::Flush(IMiniFSDiskIO *pdiskio){
 		if (m_Modified == true){
 			m_Modified = false;
-			// キャッシュが書き換えられているため、ディスクに書き戻す
-			return pdiskio->disk_write(m_Buffer, m_Sector, 1);
+			if (m_Sector != INVALID_SECTOR){
+				// キャッシュが書き換えられているため、ディスクに書き戻す
+				return pdiskio->disk_write(m_Buffer, m_Sector, 1);
+			}
+			else{
+				return RES_INTERNAL_ERROR;
+			}
 		}
 		else{
 			return RES_SUCCEEDED;

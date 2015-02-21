@@ -29,7 +29,7 @@ namespace mfs{
 
 
 
-	// 最初のパーティションを配置するセクター
+	// 最初のパーティションを配置するセクター番号
 	static const uint32_t FIRST_PARTITION_SECTOR = 63;
 
 
@@ -37,8 +37,13 @@ namespace mfs{
 	// 4Kセクターをサポートする
 	// このオプションを使用しないとき、セクターサイズは512バイトのみがサポートされる
 	static const bool SUPPORT_4K_SECTOR = false;
-
 	
+
+
+	// キャッシュを削減する
+	static const bool REDUCE_CACHE = false;
+
+
 
 	// exFATのフォーマットをサポートする
 	// このオプションが有効なとき、USE_SIMPLE_UPPER_CASEオプションは無視される

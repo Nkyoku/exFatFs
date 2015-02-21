@@ -116,7 +116,7 @@ namespace mfs{
 	};
 
 	// ファイル・ディレクトリの格納場所を格納する構造体
-	struct ManageBase_t{
+	struct DirEntry_t{
 		uint32_t flags;						// フラグ
 		uint32_t start_cluster;				// データのある最初のクラスタ番号
 		uint64_t size;						// サイズ
@@ -125,14 +125,14 @@ namespace mfs{
 		uint32_t entry_offset;				// ディレクトリエントリのあるオフセット
 	};
 
-	// ファイル・ディレクトリにアクセスするための構造体
-	struct Manage_t : ManageBase_t{
+	// クラスタチェインにアクセスするための構造体
+	struct Chain_t : DirEntry_t{
 		uint32_t frag_head_cluster;			// 現在アクセス中のフラグメントの最初のクラスタ番号
 		uint32_t frag_tail_cluster;			// 現在アクセス中のフラグメントの最後のクラスタ番号
 		uint32_t next_frag_cluster;			// 次のフラグメントの最初のクラスタ番号
-		uint32_t current_cluster;			// 現在のファイルポインタがあるクラスタ番号
-		uint64_t pointer;					// ファイルポインタ
-		Cache *pcache;						// キャッシュへのポインタ
+		uint32_t current_cluster;			// 現在のポインタがあるクラスタ番号
+		uint64_t pointer;					// ポインタ
+		Cache *pcache;						// キャッシュ
 
 		// 初期化する
 		void Init(Cache *pcache_){
@@ -146,24 +146,24 @@ namespace mfs{
 	};
 
 	// ディレクトリを管理する構造体
-	struct DirManage_t{
+	/*struct DirManage_t{
 		uint32_t dummy;
 		
 		// 初期化する
 		void init(void){
 			
 		}
-	};
+	};*/
 
 	// ファイルを管理する構造体
-	struct FileManage_t{
+	/*struct FileManage_t{
 		uint32_t dummy;
 		
 		// 初期化する
 		void init(void){
 			
 		}
-	};
+	};*/
 
 	// ファイルを開くオプション
 	enum OPENOPTION_e{
