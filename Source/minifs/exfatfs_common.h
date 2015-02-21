@@ -14,6 +14,9 @@ namespace mfs{
 	// 未使用のクラスタ番号
 	static const uint32_t UNUSED_CLUSTER = 0xFFFFFFFFUL;
 
+	// 終端のクラスタ番号
+	static const uint32_t TERMINAL_CLUSTER = 0xFFFFFFFFUL;
+
 	// 存在できる最小のクラスタ番号
 	static const uint32_t MINIMUM_VALID_CLUSTER = 2UL;
 	
@@ -23,14 +26,17 @@ namespace mfs{
 	// 存在できる最大のクラスタ総数
 	static const uint32_t MAXIMUM_CLUSTER_COUNT = MAXIMUM_VALID_CLUSTER - MINIMUM_VALID_CLUSTER + 1;
 
-	// 未使用のクラスタ総数
-	static const uint32_t UNUSED_CLUSTER_COUNT = 0xFFFFFFFFUL;
+	// 無効なクラスタ総数
+	static const uint32_t INVALID_CLUSTER_COUNT = 0xFFFFFFFFUL;
+
+	// クラスタ数の余裕分
+	static const uint32_t SPARE_CLUSTER_COUNT = 4;
 
 	// ディレクトリエントリの長さ
 	static const uint32_t DIR_ENTRY_LENGTH = 32;
 
 	// クラスタ割り当てビットマップを読み取る単位
-	static const uint32_t ALLOC_BITMAP_UNIT = 32;
+	//static const uint32_t ALLOC_BITMAP_UNIT = 32;
 
 	// 大文字変換テーブルの占めるサイズ
 	static const uint32_t UPPER_CASE_TABLE_SIZE = 8192;

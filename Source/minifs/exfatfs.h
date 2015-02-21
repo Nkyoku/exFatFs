@@ -129,7 +129,7 @@ namespace mfs{
 		// クラスタチェインを開く
 		RESULT_e OpenChain(Chain_t &chain, uint32_t attributes, const fschar_t *path);
 
-		// ポインタをシークする
+		// クラスタチェインをシークする
 		RESULT_e SeekChain(Chain_t &chain, uint64_t offset);
 
 		// クラスタチェインをキャッシュする
@@ -141,11 +141,14 @@ namespace mfs{
 		// クラスタチェインへ書き込む
 		RESULT_e WriteChain(Chain_t &chain, const void *buf, uint32_t length);
 
-		// クラスタチェインを作成する
-		RESULT_e CreateChain(Chain_t &chain, uint32_t current_cluster, uint32_t next_cluster);
+		// クラスタチェインを伸ばす
+		RESULT_e ExtendChain(Chain_t &chain, uint32_t cluster_count);
 
 		// クラスタチェインを削除する
 		RESULT_e DeleteChain(Chain_t &chain, uint32_t start_cluster);
+
+		// クラスタチェインをFATに書き込む
+		RESULT_e WriteFAT(uint32_t previous_cluster, uint32_t start_cluster, uint32_t cluster_count);
 
 
 
