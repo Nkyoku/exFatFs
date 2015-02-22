@@ -616,7 +616,7 @@ namespace mfs{
 						}
 
 						// クラスタチェインを削除する
-						result = DeleteChain(chain, chain.start_cluster);
+						result = DeleteChain(chain, chain.start_cluster, true);
 						if (result != RES_SUCCEEDED){
 							goto finish;
 						}
@@ -940,54 +940,18 @@ namespace mfs{
 
 	// フラグメントを把握する
 	RESULT_e ExFatFs::LoadFragment(Chain_t &chain, uint32_t start_cluster){
-		chain.frag_head_cluster = start_cluster;
-
-		if (start_cluster == INVALID_CLUSTER){
-			// ファイルが存在しない
-			chain.frag_tail_cluster = INVALID_CLUSTER;
-			chain.next_frag_cluster = INVALID_CLUSTER;
-		}
-		else if (chain.flags & FLAG_CONTIGUOUS){
-			// クラスタチェインが存在しない
+		if (chain.flags & FLAG_CONTIGUOUS){
+			// 断片化していない
+			chain.frag_head_cluster = chain.start_cluster;
 			chain.frag_tail_cluster = chain.start_cluster + RShiftCeilingPV64to32(chain.size, m_SectorsPerClusterShift) - 1;
 			chain.next_frag_cluster = INVALID_CLUSTER;
+			return RES_SUCCEEDED;
 		}
 		else{
-			RESULT_e result;
-			uint32_t entry_per_sector_shift = m_BytesPerSectorShift - 2;
-			uint32_t entry_mask = (1UL << entry_per_sector_shift) - 1;
-			uint32_t *fat = (uint32_t*)m_FATAndDirCache.GetBuffer(0);
-			uint32_t cluster = start_cluster;
-			uint32_t next_cluster = INVALID_CLUSTER;
-			while (true){
-				// FATを1セクター読み取る
-				uint32_t sector = m_FATOffset + (cluster >> entry_per_sector_shift);
-				result = m_FATAndDirCache.ReadTo(m_pDiskIO, sector);
-				if (result != RES_SUCCEEDED){
-					return result;
-				}
-
-				do{
-					next_cluster = LoadLE32(fat + (cluster & entry_mask));
-					if (IsValidCluster(next_cluster) == false){
-						// 次のクラスタが終端ならフラグメントの終端
-						next_cluster = INVALID_CLUSTER;
-						goto finish;
-					}
-					if ((cluster + 1) != next_cluster){
-						// クラスタが不連続ならフラグメントの終端
-						goto finish;
-					}
-					cluster++;
-				} while ((cluster & entry_mask) != 0);
-			}
-
-		finish:
-			chain.frag_tail_cluster = cluster;
-			chain.next_frag_cluster = next_cluster;
+			// FATを参照してフラグメントを調べる
+			chain.frag_head_cluster = start_cluster;
+			return ReadContinuousFAT(chain.frag_head_cluster, chain.frag_tail_cluster, chain.next_frag_cluster);
 		}
-
-		return RES_SUCCEEDED;
 	}
 
 	// クラスタへアクセスする前にChain_tを初期化する
@@ -1254,15 +1218,17 @@ namespace mfs{
 		
 		// クラスタチェインを最後部まで辿る
 		RESULT_e result;
-		while (chain.next_frag_cluster != INVALID_CLUSTER){
-			result = LoadFragment(chain, chain.next_frag_cluster);
+		uint32_t tail_cluster = chain.frag_tail_cluster;
+		uint32_t next_cluster = chain.next_frag_cluster;
+		while (next_cluster != INVALID_CLUSTER){
+			result = ReadContinuousFAT(next_cluster, tail_cluster, next_cluster);
 			if (result != RES_SUCCEEDED){
 				return result;
 			}
 		}
 
 		// 現在のクラスタチェインのすぐ後方に空きクラスタがあるか調べる
-		uint32_t start_cluster = chain.frag_tail_cluster;
+		uint32_t start_cluster = tail_cluster;
 
 		while (0 < cluster_count){
 			uint32_t free_cluster;
@@ -1280,26 +1246,26 @@ namespace mfs{
 
 				if (chain.flags & FLAG_CONTIGUOUS){
 					// FATにクラスタチェインが存在しない(断片化していない)
-					if ((chain.frag_tail_cluster + 1) == free_cluster){
+					if ((tail_cluster + 1) == free_cluster){
 						// クラスタ割り当てビットマップを更新する
-						chain.frag_tail_cluster += count;
+						tail_cluster += count;
 						continue;
 					}
 
 					// 断片化していなかったため書き込まれていなかったFATを更新する
-					result = WriteFAT(INVALID_CLUSTER, chain.frag_head_cluster, chain.frag_tail_cluster - chain.frag_head_cluster + 1);
+					result = WriteContinuousFAT(INVALID_CLUSTER, chain.start_cluster, tail_cluster - chain.start_cluster + 1);
 					if (result != RES_SUCCEEDED){
 						return result;
 					}
+					chain.flags &= ~FLAG_CONTIGUOUS;
 				}
 				
 				// FATを更新する
-				result = WriteFAT(chain.frag_tail_cluster, free_cluster, count);
+				result = WriteContinuousFAT(tail_cluster, free_cluster, count);
 				if (result != RES_SUCCEEDED){
 					return result;
 				}
-				chain.frag_head_cluster = free_cluster;
-				chain.frag_tail_cluster = free_cluster + count - 1;
+				tail_cluster = free_cluster + count - 1;
 
 				// 続きから空きクラスタを検索する
 				start_cluster = free_cluster + free_cluster_count;
@@ -1321,64 +1287,136 @@ namespace mfs{
 	}
 
 	// クラスタチェインを削除する
-	RESULT_e ExFatFs::DeleteChain(Chain_t &chain, uint32_t start_cluster){
+	// start_clusterから次のクラスタを削除する
+	RESULT_e ExFatFs::DeleteChain(Chain_t &chain, uint32_t start_cluster, bool contain_start){
+		if (chain.flags & FLAG_CONTIGUOUS){
+			return RES_SUCCEEDED;
+		}
+		else{
+			RESULT_e result;
+
+			uint32_t head_cluster = start_cluster;
+			if (contain_start == true){
+				start_cluster = INVALID_CLUSTER;
+			}
+			while (head_cluster != INVALID_CLUSTER){
+				uint32_t tail_cluster, next_cluster;
+				
+				// FATを読む
+				result = ReadContinuousFAT(head_cluster, tail_cluster, next_cluster);
+				if (result != RES_SUCCEEDED){
+					return result;
+				}
+
+				if (start_cluster == head_cluster){
+					head_cluster++;
+
+					// start_clusterからのリンクを切る
+					result = WriteFAT(start_cluster, TERMINAL_CLUSTER);
+					if (result != RES_SUCCEEDED){
+						return result;
+					}
+				}
+
+				// クラスタ割り当てビットマップの当該領域をクリア
+				uint32_t cluster_count = tail_cluster - head_cluster + 1;
+				result = FillAllocationBitmap(head_cluster, cluster_count, false);
+				if (result != RES_SUCCEEDED){
+					return result;
+				}
+
+				m_FreeClusterCount -= cluster_count;
+				head_cluster = next_cluster;
+			}
+		}
+		
+		return RES_SUCCEEDED;
+	}
+
+	// FATを読み込む
+	RESULT_e ExFatFs::ReadFAT(uint32_t previous_cluster, uint32_t &next_cluster){
 		RESULT_e result;
-		uint32_t current_cluster = start_cluster;
-		uint32_t cluster_count;
-		while (current_cluster != INVALID_CLUSTER){
-			// フラグメントを読み取る
-			result = LoadFragment(chain, current_cluster);
-			if (result != RES_SUCCEEDED){
-				return result;
-			}
+		uint32_t entry_per_sector_shift = m_BytesPerSectorShift - 2;
+		uint32_t entry_mask = (1UL << entry_per_sector_shift) - 1;
+		uint32_t sector = m_FATOffset + (previous_cluster >> entry_per_sector_shift);
+		uint32_t *fat = (uint32_t*)m_FATAndDirCache.GetBuffer(0);
+		result = m_FATAndDirCache.ReadTo(m_pDiskIO, sector);
+		if (result != RES_SUCCEEDED){
+			return result;
+		}
+		next_cluster = LoadLE32(fat + (previous_cluster & entry_mask));
+		return RES_SUCCEEDED;
+	}
 
-			// クラスタ割り当てビットマップの当該領域をクリア
-			cluster_count = chain.frag_tail_cluster - current_cluster + 1;
-			result = FillAllocationBitmap(current_cluster, cluster_count, false);
-			if (result != RES_SUCCEEDED){
-				return result;
-			}
+	// FATに書き込む
+	RESULT_e ExFatFs::WriteFAT(uint32_t previous_cluster, uint32_t next_cluster){
+		RESULT_e result;
+		uint32_t entry_per_sector_shift = m_BytesPerSectorShift - 2;
+		uint32_t entry_mask = (1UL << entry_per_sector_shift) - 1;
+		uint32_t sector = m_FATOffset + (previous_cluster >> entry_per_sector_shift);
+		uint32_t *fat = (uint32_t*)m_FATAndDirCache.GetBuffer(0);
+		result = m_FATAndDirCache.ReadTo(m_pDiskIO, sector);
+		if (result != RES_SUCCEEDED){
+			return result;
+		}
+		StoreLE32(fat + (previous_cluster & entry_mask), next_cluster);
+		m_FATAndDirCache.SetModified(true);
+		return RES_SUCCEEDED;
+	}
 
-			current_cluster = chain.next_frag_cluster;
+	// FATを連続で読み込む
+	RESULT_e ExFatFs::ReadContinuousFAT(uint32_t start_cluster, uint32_t &tail_cluster, uint32_t &next_cluster){
+		if (start_cluster == INVALID_CLUSTER){
+			// ファイルが存在しない
+			tail_cluster = INVALID_CLUSTER;
+			next_cluster = INVALID_CLUSTER;
+		}
+		else{
+			uint32_t cluster = start_cluster;
+			while (true){
+				RESULT_e result;
+				uint32_t next;
+				result = ReadFAT(cluster, next);
+				if (IsValidCluster(next) == false){
+					// 次のクラスタが終端ならフラグメントの終端
+					next_cluster = INVALID_CLUSTER;
+					break;
+				}
+				if ((cluster + 1) != next){
+					// クラスタが不連続ならフラグメントの終端
+					next_cluster = next;
+					break;
+				}
+				cluster++;
+			}
+			tail_cluster = cluster;
 		}
 
 		return RES_SUCCEEDED;
 	}
 
-	// クラスタチェインをFATに書き込む
-	RESULT_e ExFatFs::WriteFAT(uint32_t previous_cluster, uint32_t start_cluster, uint32_t cluster_count){
+	// FATに連続で書き込む
+	RESULT_e ExFatFs::WriteContinuousFAT(uint32_t previous_cluster, uint32_t start_cluster, uint32_t cluster_count){
 		RESULT_e result;
-		uint32_t entry_per_sector_shift = m_BytesPerSectorShift - 2;
-		uint32_t entry_mask = (1UL << entry_per_sector_shift) - 1;
-		uint32_t *fat = (uint32_t*)m_FATAndDirCache.GetBuffer(0);
-
+		
 		if (previous_cluster != INVALID_CLUSTER){
 			// previous_clusterからstart_clusterにリンクを作成
-			uint32_t sector = m_FATOffset + (previous_cluster >> (m_BytesPerSectorShift - 2));
-			result = m_FATAndDirCache.ReadTo(m_pDiskIO, sector);
+			result = WriteFAT(previous_cluster, start_cluster);
 			if (result != RES_SUCCEEDED){
 				return result;
 			}
-			StoreLE32(fat + (previous_cluster & entry_mask), start_cluster);
-			m_FATAndDirCache.SetModified(true);
 		}
 
+		// FATにクラスタチェインを書き込む
 		uint32_t cluster = start_cluster;
 		while (0 < cluster_count){
-			// FATを1セクター読み取る
-			uint32_t sector = m_FATOffset + (cluster >> entry_per_sector_shift);
-			result = m_FATAndDirCache.ReadTo(m_pDiskIO, sector);
+			cluster_count--;
+			uint32_t next_cluster = (cluster_count != 0) ? (cluster + 1) : TERMINAL_CLUSTER;
+			result = WriteFAT(cluster, next_cluster);
 			if (result != RES_SUCCEEDED){
 				return result;
 			}
-
-			do{
-				cluster_count--;
-				uint32_t next_cluster = (cluster_count != 0) ? (cluster + 1) : TERMINAL_CLUSTER;
-				StoreLE32(fat + (cluster & entry_mask), next_cluster);
-				cluster++;
-			} while ((cluster & entry_mask) != 0);
-			m_FATAndDirCache.SetModified(true);
+			cluster++;
 		}
 
 		return RES_SUCCEEDED;
@@ -1638,7 +1676,7 @@ namespace mfs{
 	}
 
 	// クラスタ割り当てビットマップの値を変更する
-	RESULT_e ExFatFs::FillAllocationBitmap(uint32_t start_cluster, uint32_t number_of_clusters, bool value){
+	RESULT_e ExFatFs::FillAllocationBitmap(uint32_t start_cluster, uint32_t cluster_count, bool value){
 		RESULT_e result;
 		if (start_cluster < MINIMUM_VALID_CLUSTER){
 			return RES_INTERNAL_ERROR;
@@ -1647,7 +1685,7 @@ namespace mfs{
 		if (m_ClusterCount <= start_cluster){
 			return RES_INTERNAL_ERROR;
 		}
-		if ((m_ClusterCount - start_cluster) < number_of_clusters){
+		if ((m_ClusterCount - start_cluster) < cluster_count){
 			return RES_INTERNAL_ERROR;
 		}
 
@@ -1658,7 +1696,7 @@ namespace mfs{
 		uint32_t cluster = start_cluster;
 		uint32_t skip_bits = cluster & (bits_per_sector - 1);
 		uint8_t *bitmap = (uint8_t*)m_AllocBitmapCache.GetBuffer(0);	// ビットマップはキャッシュメモリーから直接取得する
-		do{
+		while (0 < cluster_count){
 			// シークしてキャッシュする
 			result = SeekChain(m_AllocBitmapChain, offset);
 			if (result != RES_SUCCEEDED){
@@ -1674,15 +1712,15 @@ namespace mfs{
 			uint32_t *p_end;
 			uint32_t head = skip_bits & 0x1F;
 			uint32_t tail;
-			if ((skip_bits + number_of_clusters) < bits_per_sector){
-				tail = (skip_bits + number_of_clusters) & 0x1F;
-				p_end = (uint32_t*)bitmap + (skip_bits + number_of_clusters) / 32;
-				number_of_clusters = 0;
+			if ((skip_bits + cluster_count) < bits_per_sector){
+				tail = (skip_bits + cluster_count) & 0x1F;
+				p_end = (uint32_t*)bitmap + (skip_bits + cluster_count) / 32;
+				cluster_count = 0;
 			}
 			else{
 				tail = 0;
 				p_end = (uint32_t*)bitmap + bits_per_sector / 32;
-				number_of_clusters -= bits_per_sector - skip_bits;
+				cluster_count -= bits_per_sector - skip_bits;
 			}
 			skip_bits = 0;
 			uint32_t head_mask = NEtoLE32(0xFFFFFFFFUL << head);
@@ -1712,7 +1750,7 @@ namespace mfs{
 			// 書き換えたことにする
 			m_AllocBitmapCache.SetModified(true);
 			offset += bytes_per_sector;
-		} while (0 < number_of_clusters);
+		};
 
 		return RES_SUCCEEDED;
 	}

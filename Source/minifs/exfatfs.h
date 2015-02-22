@@ -145,10 +145,20 @@ namespace mfs{
 		RESULT_e ExtendChain(Chain_t &chain, uint32_t cluster_count);
 
 		// クラスタチェインを削除する
-		RESULT_e DeleteChain(Chain_t &chain, uint32_t start_cluster);
+		// start_clusterから次のクラスタを削除する
+		RESULT_e DeleteChain(Chain_t &chain, uint32_t start_cluster, bool contain_start);
 
-		// クラスタチェインをFATに書き込む
-		RESULT_e WriteFAT(uint32_t previous_cluster, uint32_t start_cluster, uint32_t cluster_count);
+		// FATを読み込む
+		RESULT_e ReadFAT(uint32_t previous_cluster, uint32_t &next_cluster);
+
+		// FATに書き込む
+		RESULT_e WriteFAT(uint32_t previous_cluster, uint32_t next_cluster);
+
+		// FATを連続で読み込む
+		RESULT_e ReadContinuousFAT(uint32_t start_cluster, uint32_t &tail_cluster, uint32_t &next_cluster);
+
+		// FATに連続で書き込む
+		RESULT_e WriteContinuousFAT(uint32_t previous_cluster, uint32_t start_cluster, uint32_t cluster_count);
 
 
 
@@ -163,7 +173,7 @@ namespace mfs{
 		RESULT_e FindFreeClusters(uint32_t start_cluster, uint32_t &found_cluster, uint32_t &contiguous_clusters);
 
 		// クラスタ割り当てビットマップの値を変更する
-		RESULT_e FillAllocationBitmap(uint32_t start_cluster, uint32_t number_of_clusters, bool value);
+		RESULT_e FillAllocationBitmap(uint32_t start_cluster, uint32_t cluster_count, bool value);
 
 
 
