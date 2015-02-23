@@ -35,6 +35,17 @@ namespace mfs{
 	protected:
 		// コンストラクタ
 		IMiniFSHandle(void) : m_pFileSystem(&NullFs), m_pPreviousHandle(nullptr), m_pNextHandle(nullptr), m_Chain(){}
+
+	public:
+		// 最後に発生した致命的なエラーコードを取得する
+		RESULT_e lastError(void){
+			return m_Chain.last_error;
+		}
+
+		// 致命的なエラーが発生していないか取得する
+		bool noError(void){
+			return (m_Chain.last_error == RES_SUCCEEDED);
+		}
 	};
 }
 

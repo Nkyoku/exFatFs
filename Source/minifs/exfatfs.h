@@ -148,6 +148,9 @@ namespace mfs{
 		// start_clusterから次のクラスタを削除する
 		RESULT_e DeleteChain(Chain_t &chain, uint32_t start_cluster, bool contain_start);
 
+
+
+	protected:
 		// FATを読み込む
 		RESULT_e ReadFAT(uint32_t previous_cluster, uint32_t &next_cluster);
 

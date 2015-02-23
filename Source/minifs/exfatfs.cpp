@@ -743,10 +743,11 @@ namespace mfs{
 		if (lockMutex() == true){
 			RESULT_e result;
 			if (Mounted() == true){
-				if (Assigned(dirhandle) == true){
+				result = dirhandle.lastError();
+				if (result == RES_SUCCEEDED){
 					Chain_t &chain = GetChain(dirhandle);
 					if (pinfo == nullptr){
-						return InitChain(chain);
+						result = InitChain(chain);
 					}
 					else{
 						// 検索条件を作成し検索する
@@ -761,9 +762,7 @@ namespace mfs{
 							*(Property_t*)pinfo = (Property_t&)conditions.property;
 						}
 					}
-				}
-				else{
-					result = RES_INVALID_HANDLE;
+					chain.last_error = result;
 				}
 			}
 			else{
@@ -821,20 +820,24 @@ namespace mfs{
 		if (lockMutex() == true){
 			RESULT_e result;
 			if (Mounted() == true){
-				uint64_t size = filehandle.size();
-				if (GetChain(filehandle).flags & FLAG_WRITABLE){
-					if (size < offset) offset = size;
-					result = SeekChain(GetChain(filehandle), offset);
-				}
-				else if (offset <= size){
-					result = SeekChain(GetChain(filehandle), offset);
-				}
-				else{
-					// ファイルサイズを拡張する
+				result = filehandle.lastError();
+				if (result == RES_SUCCEEDED){
+					Chain_t &chain = GetChain(filehandle);
+					if (chain.flags & FLAG_WRITABLE){
+						if (chain.size < offset) offset = chain.size;
+						result = SeekChain(chain, offset);
+					}
+					else if (offset <= chain.size){
+						result = SeekChain(chain, offset);
+					}
+					else{
+						// ファイルサイズを拡張する
 
 
 
-					result = RES_NOT_SUPPORTED;
+						result = RES_NOT_SUPPORTED;
+					}
+					chain.last_error = result;
 				}
 			}
 			else{
@@ -852,9 +855,16 @@ namespace mfs{
 	uint32_t ExFatFs::ReadFile(FileHandle &filehandle, void *buf, uint32_t length){
 		if (lockMutex() == true){
 			if (Mounted() == true){
-				uint64_t remaining = filehandle.size() - filehandle.tell();
-				if (remaining < (uint64_t)length) length = (uint32_t)remaining;
-				if (ReadChain(GetChain(filehandle), buf, length) != RES_SUCCEEDED){
+				RESULT_e result;
+				result = filehandle.lastError();
+				if (result == RES_SUCCEEDED){
+					Chain_t &chain = GetChain(filehandle);
+					uint64_t remaining = chain.size - chain.pointer;
+					if (remaining < (uint64_t)length) length = (uint32_t)remaining;
+					result = ReadChain(chain, buf, length);
+					chain.last_error = result;
+				}
+				if (result != RES_SUCCEEDED){
 					length = 0;
 				}
 			}
@@ -871,13 +881,21 @@ namespace mfs{
 
 	// ファイルへ書き込む
 	uint32_t ExFatFs::WriteFile(FileHandle &filehandle, const void *buf, uint32_t length){
-		if ((Writable() == true) && (GetChain(filehandle).flags & FLAG_WRITABLE)){
+		Chain_t &chain = GetChain(filehandle);
+		if ((Writable() == true) && (chain.flags & FLAG_WRITABLE)){
 			if (lockMutex() == true){
 				if (Mounted() == true){
-					uint64_t pointer = filehandle.tell();
 					RESULT_e result;
-					result = WriteChain(GetChain(filehandle), buf, length);
-					length = (uint32_t)(filehandle.tell() - pointer);
+					result = filehandle.lastError();
+					if (result == RES_SUCCEEDED){
+						uint64_t pointer = chain.pointer;
+						result = WriteChain(GetChain(filehandle), buf, length);
+						length = (uint32_t)(chain.pointer - pointer);
+						chain.last_error = result;
+					}
+					if (result != RES_SUCCEEDED){
+						length = 0;
+					}
 				}
 				else{
 					length = 0;
@@ -895,7 +913,20 @@ namespace mfs{
 			if (Writable() == true){
 				if (lockMutex() == true){
 					RESULT_e result;
-					result = (Mounted() == false) ? RES_NOT_MOUNTED : GetChain(filehandle).pcache->Flush(m_pDiskIO);
+					if (Mounted() == true){
+						Chain_t &chain = GetChain(filehandle);
+						result = filehandle.lastError();
+						if (result == RES_SUCCEEDED){
+							result = GetChain(filehandle).pcache->Flush(m_pDiskIO);
+							if (result == RES_SUCCEEDED){
+								result = m_pDiskIO->disk_sync();
+							}
+							chain.last_error = result;
+						}
+					}
+					else{
+						result = RES_NOT_MOUNTED;
+					}
 					unlockMutex();
 					return result;
 				}
@@ -913,13 +944,23 @@ namespace mfs{
 			if (lockMutex() == true){
 				RESULT_e result;
 				if (Mounted() == true){
+					result = filehandle.lastError();
+					if (result == RES_SUCCEEDED){
+
+						Chain_t &chain = GetChain(filehandle);
+						if (0 < chain.size){
 
 
 
 
 
+						}
 
-					result = RES_NOT_SUPPORTED;
+
+						result = RES_NOT_SUPPORTED;
+
+						chain.last_error = result;
+					}
 				}
 				else{
 					result = RES_NOT_MOUNTED;
@@ -959,7 +1000,8 @@ namespace mfs{
 		//chain.frag_head_cluster = INVALID_CLUSTER;
 		//chain.frag_tail_cluster = INVALID_CLUSTER;
 		//chain.next_frag_cluster = INVALID_CLUSTER;
-		chain.current_cluster = chain.start_cluster;
+		chain.last_error = RES_SUCCEEDED;
+		chain.frag_offset_cluster = 0;
 		chain.pointer = 0;
 		chain.pcache = &m_FATAndDirCache;
 		return LoadFragment(chain, chain.start_cluster);
@@ -1044,70 +1086,64 @@ namespace mfs{
 		if (chain.start_cluster == INVALID_CLUSTER){
 			return RES_INTERNAL_ERROR;
 		}
-		else{
-			RESULT_e result;
-			uint32_t bytes_per_cluster = 1UL << (m_BytesPerSectorShift + m_SectorsPerClusterShift);
-			uint32_t pointer_lapped_cluster = (uint32_t)chain.pointer & (bytes_per_cluster - 1);
-			uint32_t offset_lapped_cluster = (uint32_t)offset & (bytes_per_cluster - 1);
 
-			if (offset == chain.pointer){
-				// ポインタは動かない
+		RESULT_e result;
+		uint32_t bytes_per_cluster_shift = m_BytesPerSectorShift + m_SectorsPerClusterShift;
+		uint32_t bytes_per_cluster = 1UL << bytes_per_cluster_shift;
+		uint32_t pointer_cluster = RShift64to32(chain.pointer, bytes_per_cluster_shift);
+		uint32_t offset_cluster = RShift64to32(offset, bytes_per_cluster_shift);
+
+		if (pointer_cluster == offset_cluster){
+			// ポインタは同じクラスタ内を移動する
+			chain.pointer = offset;
+			return RES_SUCCEEDED;
+		}
+		else if (offset_cluster < pointer_cluster){
+			// ポインタは前のクラスタに移動する
+			uint32_t back = pointer_cluster - offset_cluster;
+			if (back <= chain.frag_offset_cluster){
+				// シーク先は現在のフラグメント中にある
+				chain.frag_offset_cluster -= back;
+				chain.pointer = offset;
 				return RES_SUCCEEDED;
 			}
-			else if (offset < chain.pointer){
-				// ポインタは後退する
-				if (chain.current_cluster != INVALID_CLUSTER){
-					// シーク先が現在のフラグメントの中にあるか
-					uint32_t back = (uint32_t)((chain.pointer - offset) >> (m_SectorsPerClusterShift + m_BytesPerSectorShift));
-					if (pointer_lapped_cluster < offset_lapped_cluster){
-						back++;
-					}
-					if (chain.frag_head_cluster <= (chain.current_cluster - back)){
-						// シーク先は現在のフラグメント中にある
-						chain.current_cluster -= back;
-						chain.pointer = offset;
-						return RES_SUCCEEDED;
-					}
-				}
-
+			else{
 				// シーク先は現在のフラグメント中にない
 				// ポインタをクラスタチェインの最初に戻しシークしなおす
-				chain.current_cluster = chain.start_cluster;
+				chain.frag_offset_cluster = 0;
 				chain.pointer = 0;
-				result = LoadFragment(chain, chain.current_cluster);
+				pointer_cluster = 0;
+				result = LoadFragment(chain, chain.start_cluster);
 				if (result != RES_SUCCEEDED){
 					return result;
 				}
 			}
+		}
 
-			// ポインタは前進する
-			if (chain.current_cluster == INVALID_CLUSTER){
-				// ポインタはクラスタチェインの終端に達している
-				return RES_NO_DATA;
+		// クラスタチェインを目的のクラスタ数だけ進む
+		uint32_t forward = offset_cluster - pointer_cluster;
+		chain.pointer &= ~((uint64_t)bytes_per_cluster - 1);	// ポインタをクラスタ境界に戻す
+		while (true){
+			uint32_t remaining = chain.frag_tail_cluster - chain.frag_head_cluster + 1 - chain.frag_offset_cluster;
+			if (forward < remaining){
+				// シーク先は現在のフラグメント中にある
+				chain.frag_offset_cluster += forward;
+				chain.pointer += LShift32to64(forward, bytes_per_cluster_shift);
+				chain.pointer += (uint32_t)offset & (bytes_per_cluster - 1);
+				return RES_SUCCEEDED;
 			}
 			else{
-				// クラスタチェインを目的のクラスタ数だけ辿る
-				uint32_t forward = (uint32_t)((offset - chain.pointer) >> (m_SectorsPerClusterShift + m_BytesPerSectorShift));
-				if (offset_lapped_cluster < pointer_lapped_cluster){
-					forward++;
+				// シーク先は現在のフラグメント中にない。次のフラグメントへ移動する
+				forward -= remaining;
+				chain.pointer += LShift32to64(remaining, bytes_per_cluster_shift);
+				if (chain.next_frag_cluster == INVALID_CLUSTER){
+					chain.frag_offset_cluster += remaining;
+					return RES_NO_DATA;
 				}
-				chain.pointer = offset;
-				while (true){
-					uint32_t diff = chain.frag_tail_cluster - chain.current_cluster + 1;
-					if (forward < diff){
-						// シーク先は現在のフラグメント中にある
-						chain.current_cluster += forward;
-						return RES_SUCCEEDED;
-					}
-					else{
-						// シーク先は現在のフラグメント中にない。次のフラグメントへ移動する
-						forward -= diff;
-						chain.current_cluster = chain.next_frag_cluster;
-						result = LoadFragment(chain, chain.current_cluster);
-						if (result != RES_SUCCEEDED){
-							return result;
-						}
-					}
+				chain.frag_offset_cluster = 0;
+				result = LoadFragment(chain, chain.next_frag_cluster);
+				if (result != RES_SUCCEEDED){
+					return result;
 				}
 			}
 		}
@@ -1118,14 +1154,16 @@ namespace mfs{
 		if (chain.start_cluster == INVALID_CLUSTER){
 			return RES_INTERNAL_ERROR;
 		}
-		if (chain.current_cluster == INVALID_CLUSTER){
+		if ((chain.frag_tail_cluster - chain.frag_head_cluster) < chain.frag_offset_cluster){
 			// 読み出せるデータがない
 			return RES_NO_DATA;
 		}
 
-		uint32_t sector_in_cluster = ((uint32_t)chain.pointer >> m_BytesPerSectorShift) & ((1UL << m_SectorsPerClusterShift) - 1);	// クラスタ内でのセクター番号
-		uint32_t sector_addr = m_ClusterOffset + (chain.current_cluster << m_SectorsPerClusterShift) + sector_in_cluster;
-		return chain.pcache->ReadTo(m_pDiskIO, sector_addr);
+		uint32_t sectors_per_cluster = 1UL << m_SectorsPerClusterShift;
+		uint32_t bytes_per_cluster = 1UL << m_BytesPerSectorShift;
+		uint32_t sector_offset = ((uint32_t)chain.pointer >> m_BytesPerSectorShift) & (sectors_per_cluster - 1);	// そのクラスタ内で何番目のセクターか
+		uint32_t sector = m_ClusterOffset + ((chain.frag_head_cluster + chain.frag_offset_cluster) << m_SectorsPerClusterShift) + sector_offset;
+		return chain.pcache->ReadTo(m_pDiskIO, sector);
 	}
 
 	// クラスタチェインを読み出す
@@ -1133,34 +1171,33 @@ namespace mfs{
 		if (chain.start_cluster == INVALID_CLUSTER){
 			return RES_INTERNAL_ERROR;
 		}
-		if (chain.current_cluster == INVALID_CLUSTER){
+		if ((chain.frag_tail_cluster - chain.frag_head_cluster) < chain.frag_offset_cluster){
 			// 読み出せるデータがない
 			return RES_NO_DATA;
 		}
 
 		RESULT_e result;
-		uint32_t sector_in_cluster = ((uint32_t)chain.pointer >> m_BytesPerSectorShift) & ((1UL << m_SectorsPerClusterShift) - 1);	// クラスタ内でのセクター番号
-		uint32_t offset_in_sector = (uint32_t)chain.pointer & ((1UL << m_BytesPerSectorShift) - 1);		// セクター内でのオフセット
+		uint32_t sectors_per_cluster = 1UL << m_SectorsPerClusterShift;
+		uint32_t bytes_per_sector = 1UL << m_BytesPerSectorShift;
+		uint32_t sector_offset = ((uint32_t)chain.pointer >> m_BytesPerSectorShift) & (sectors_per_cluster - 1);	// そのクラスタ内で何番目のセクターか
+		uint32_t byte_offset = (uint32_t)chain.pointer & (bytes_per_sector - 1);		// そのセクター内で何バイト目か
 		while (0 < length){
-			bool next_cluster = false;
-			uint32_t read_bytes = 0;
-
-			uint32_t sector_addr = m_ClusterOffset + (chain.current_cluster << m_SectorsPerClusterShift) + sector_in_cluster;
-			if (offset_in_sector == 0){
+			uint32_t sector = m_ClusterOffset + ((chain.frag_head_cluster + chain.frag_offset_cluster) << m_SectorsPerClusterShift) + sector_offset;
+			uint32_t read_bytes;
+			if (byte_offset == 0){
 				// シークポインタはセクターの境界
-				if (0 < (length >> m_BytesPerSectorShift)){
+				if (bytes_per_sector <= length){
 					// バッファがセクターサイズ以上あるため、セクターをバッファに直接読み込む
-					result = m_pDiskIO->disk_read(buf, sector_addr, 1);
+					result = m_pDiskIO->disk_read(buf, sector, 1);
 					if (result != RES_SUCCEEDED){
 						return result;
 					}
-					read_bytes = 1UL << m_BytesPerSectorShift;
-					sector_in_cluster = (sector_in_cluster + 1) & ((1UL << m_SectorsPerClusterShift) - 1);
-					next_cluster = (sector_in_cluster == 0);
+					read_bytes = bytes_per_sector;
+					sector_offset++;
 				}
 				else{
 					// セクターをキャッシュに読み込んでからバッファに転送する
-					result = chain.pcache->ReadWith(m_pDiskIO, sector_addr, buf, 0, length);
+					result = chain.pcache->ReadWith(m_pDiskIO, sector, buf, 0, length);
 					if (result != RES_SUCCEEDED){
 						return result;
 					}
@@ -1168,36 +1205,51 @@ namespace mfs{
 				}
 			}
 			else{
-				// シークポインタはセクターの途中
-				uint32_t last_bytes = (1UL << m_BytesPerSectorShift) - offset_in_sector;
-				read_bytes = (length < last_bytes) ? length : last_bytes;
+				// ポインタはセクターの途中
+				read_bytes = bytes_per_sector - byte_offset;
+				
+				if (length < read_bytes){
+					read_bytes = length;
+				}
+				else{
+					sector_offset++;
+				}
 
 				// キャッシュを通してバッファに転送する
-				result = chain.pcache->ReadWith(m_pDiskIO, sector_addr, buf, offset_in_sector, read_bytes);
+				result = chain.pcache->ReadWith(m_pDiskIO, sector, buf, byte_offset, read_bytes);
 				if (result != RES_SUCCEEDED){
 					return result;
 				}
 
-				offset_in_sector = 0;
+				byte_offset = 0;
 			}
 
 			buf = (uint8_t*)buf + read_bytes;
 			length -= read_bytes;
 			chain.pointer += read_bytes;
 
-			if (next_cluster == true){
+			if (sector_offset == sectors_per_cluster){
+				sector_offset = 0;
+
 				// 次のクラスタへ移動する
-				if (chain.current_cluster == chain.frag_tail_cluster){
-					// 現在のクラスタはフラグメントの最後のクラスタであるため、次のフラグメントを読み込む
-					chain.current_cluster = chain.next_frag_cluster;
-					result = LoadFragment(chain, chain.next_frag_cluster);
-					if (result != RES_SUCCEEDED){
-						return result;
+				if ((chain.frag_tail_cluster - chain.frag_head_cluster) <= chain.frag_offset_cluster){
+					// 次のフラグメントのクラスタに移動する
+					if (chain.next_frag_cluster != INVALID_CLUSTER){
+						chain.frag_offset_cluster = 0;
+						result = LoadFragment(chain, chain.next_frag_cluster);
+						if (result != RES_SUCCEEDED){
+							return result;
+						}
+					}
+					else{
+						// 以後のアクセスで強制的にエラーを起こす
+						chain.start_cluster = INVALID_CLUSTER;
+						return RES_INTERNAL_ERROR;
 					}
 				}
 				else{
 					// フラグメント内の次のクラスタに移動する
-					chain.current_cluster++;
+					chain.frag_offset_cluster++;
 				}
 			}
 		}
@@ -1332,6 +1384,8 @@ namespace mfs{
 		
 		return RES_SUCCEEDED;
 	}
+
+
 
 	// FATを読み込む
 	RESULT_e ExFatFs::ReadFAT(uint32_t previous_cluster, uint32_t &next_cluster){

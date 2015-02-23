@@ -117,6 +117,11 @@ namespace mfs{
 		//return ((uint64_t)(val >> (32 - s)) << 32) | (uint64_t)((uint32_t)(val << s));
 	}
 
+	// 右にシフトする (uint64_t) => (uint32_t)
+	static inline uint32_t RShift64to32(uint64_t val, uint32_t s){
+		return (uint32_t)(val >> s);
+	}
+
 	// 右にシフトして切り上げる (uint32_t)
 	static inline uint32_t RShiftCeiling32(uint32_t val, uint32_t s){
 		return (val >> s) + ((val & ((1UL << s) - 1)) ? 1 : 0);
@@ -127,7 +132,7 @@ namespace mfs{
 		return ((val - 1) >> s) + 1;
 	}
 
-	// 右にシフトして切り上げる (uint64_t)
+	// 右にシフトして切り上げる (uint64_t) => (uint32_t)
 	static inline uint32_t RShiftCeiling64to32(uint64_t val, uint32_t s){
 		return (uint32_t)(val >> s) + (((uint32_t)val & ((1UL << s) - 1)) ? 1 : 0);
 	}
