@@ -103,6 +103,7 @@
     <ClInclude Include="Source\minifs\minifs_common.h" />
     <ClInclude Include="Source\minifs\minifs_handle.h" />
     <ClInclude Include="Source\minifs\minifs_path.h" />
+    <ClInclude Include="Source\test.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

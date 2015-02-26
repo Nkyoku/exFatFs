@@ -148,6 +148,11 @@ namespace mfs{
 		// start_clusterから次のクラスタを削除する
 		RESULT_e DeleteChain(Chain_t &chain, uint32_t start_cluster, bool contain_start);
 
+		// クラスタチェインを確保する
+		// start_clusterからcluster_countだけクラスタを確保する
+		// 不足分は拡張され、余剰分は削除される
+		RESULT_e AllocateChain(Chain_t &chain, uint32_t start_cluster, uint32_t cluster_count, uint32_t &allocated_count);
+
 
 
 	protected:
@@ -182,7 +187,7 @@ namespace mfs{
 
 	protected:
 		// ディレクトリエントリを作成する
-		RESULT_e Link(DirHandle &dirhandle, DirEntry_t &direntry, FileInfo_t &info);
+		RESULT_e Link(DirHandle &dirhandle, DirEntry_t &direntry, FileInfo_t *info);
 
 		// ディレクトリエントリを削除する
 		RESULT_e Unlink(Chain_t &dirchain, uint32_t target_offset);

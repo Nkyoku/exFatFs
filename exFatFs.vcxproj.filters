@@ -92,5 +92,8 @@
     <ClInclude Include="Source\minifs\exfatfs.h">
       <Filter>ヘッダー ファイル\minifs</Filter>
     </ClInclude>
+    <ClInclude Include="Source\test.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

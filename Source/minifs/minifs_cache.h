@@ -50,7 +50,7 @@ namespace mfs{
 		RESULT_e ReadWith(IMiniFSDiskIO *pdiskio, uint32_t sector, void *buf, uint32_t offset, uint32_t length);
 
 		// キャッシュへ書き込む
-		RESULT_e WriteTo(IMiniFSDiskIO *pdiskio, uint32_t sector, void *buf, uint32_t offset, uint32_t length);
+		RESULT_e WriteTo(IMiniFSDiskIO *pdiskio, uint32_t sector, const void *buf, uint32_t offset, uint32_t length);
 
 		// キャッシュを書き換えたことにする
 		void SetModified(bool modified){

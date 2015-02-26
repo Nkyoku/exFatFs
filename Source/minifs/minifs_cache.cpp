@@ -49,7 +49,7 @@ namespace mfs{
 	}
 
 	// キャッシュへ書き込む
-	RESULT_e Cache::WriteTo(IMiniFSDiskIO *pdiskio, uint32_t sector, void *buf, uint32_t offset, uint32_t length){
+	RESULT_e Cache::WriteTo(IMiniFSDiskIO *pdiskio, uint32_t sector, const void *buf, uint32_t offset, uint32_t length){
 		RESULT_e result;
 		result = ReadTo(pdiskio, sector);
 		if (result != RES_SUCCEEDED){
