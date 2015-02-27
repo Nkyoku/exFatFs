@@ -616,7 +616,8 @@ namespace mfs{
 						}
 
 						// クラスタチェインを削除する
-						result = DeleteChain(chain, chain.start_cluster, true);
+						uint32_t allocated;
+						result = AllocateChain(chain, chain.start_cluster, 0, allocated);
 						if (result != RES_SUCCEEDED){
 							goto finish;
 						}
@@ -823,7 +824,7 @@ namespace mfs{
 				result = filehandle.lastError();
 				if (result == RES_SUCCEEDED){
 					Chain_t &chain = GetChain(filehandle);
-					if (chain.flags & FLAG_WRITABLE){
+					if (~chain.flags & FLAG_WRITABLE){
 						if (chain.size < offset) offset = chain.size;
 						result = SeekChain(chain, offset);
 					}
@@ -984,25 +985,22 @@ namespace mfs{
 		if (chain.flags & FLAG_CONTIGUOUS){
 			// 断片化していない
 			chain.frag_head_cluster = start_cluster;
-			//chain.frag_head_cluster = chain.start_cluster;
-			chain.frag_tail_cluster = chain.start_cluster + RShiftCeilingPV64to32(chain.size, m_SectorsPerClusterShift) - 1;
+			chain.frag_tail_cluster = chain.start_cluster + RShiftCeilingPV64to32(chain.size, m_BytesPerSectorShift + m_SectorsPerClusterShift) - 1;
 			chain.next_frag_cluster = INVALID_CLUSTER;
+			chain.frag_offset_cluster = 0;
 			return RES_SUCCEEDED;
 		}
 		else{
 			// FATを参照してフラグメントを調べる
 			chain.frag_head_cluster = start_cluster;
+			chain.frag_offset_cluster = 0;
 			return ReadContinuousFAT(chain.frag_head_cluster, chain.frag_tail_cluster, chain.next_frag_cluster);
 		}
 	}
 
 	// クラスタへアクセスする前にChain_tを初期化する
 	RESULT_e ExFatFs::InitChain(Chain_t &chain){
-		//chain.frag_head_cluster = INVALID_CLUSTER;
-		//chain.frag_tail_cluster = INVALID_CLUSTER;
-		//chain.next_frag_cluster = INVALID_CLUSTER;
 		chain.last_error = RES_SUCCEEDED;
-		chain.frag_offset_cluster = 0;
 		chain.pointer = 0;
 		chain.pcache = &m_FATAndDirCache;
 		return LoadFragment(chain, chain.start_cluster);
@@ -1085,7 +1083,12 @@ namespace mfs{
 	// クラスタチェインをシークする
 	RESULT_e ExFatFs::SeekChain(Chain_t &chain, uint64_t offset){
 		if (chain.start_cluster == INVALID_CLUSTER){
-			return RES_INTERNAL_ERROR;
+			if (offset == 0){
+				return RES_SUCCEEDED;
+			}
+			else{
+				return RES_INTERNAL_ERROR;
+			}
 		}
 
 		RESULT_e result;
@@ -1111,7 +1114,6 @@ namespace mfs{
 			else{
 				// シーク先は現在のフラグメント中にない
 				// ポインタをクラスタチェインの最初に戻しシークしなおす
-				chain.frag_offset_cluster = 0;
 				chain.pointer = 0;
 				pointer_cluster = 0;
 				result = LoadFragment(chain, chain.start_cluster);
@@ -1123,7 +1125,7 @@ namespace mfs{
 
 		// クラスタチェインを目的のクラスタ数だけ進む
 		uint32_t forward = offset_cluster - pointer_cluster;
-		chain.pointer &= ~((uint64_t)bytes_per_cluster - 1);	// ポインタをクラスタ境界に戻す
+		/*chain.pointer &= ~((uint64_t)bytes_per_cluster - 1);	// ポインタをクラスタ境界に戻す
 		while (true){
 			uint32_t remaining = chain.frag_tail_cluster - chain.frag_head_cluster + 1 - chain.frag_offset_cluster;
 			if (forward < remaining){
@@ -1141,13 +1143,37 @@ namespace mfs{
 					chain.frag_offset_cluster += remaining;
 					return RES_NO_DATA;
 				}
-				chain.frag_offset_cluster = 0;
 				result = LoadFragment(chain, chain.next_frag_cluster);
 				if (result != RES_SUCCEEDED){
 					return result;
 				}
 			}
+		}*/
+
+		while (0 < forward){
+			uint32_t remaining = chain.frag_tail_cluster - chain.frag_head_cluster + 1 - chain.frag_offset_cluster;
+			uint32_t count = (forward < remaining) ? forward : remaining;
+			forward -= count;
+			chain.frag_offset_cluster += count;
+			chain.pointer += LShift32to64(count, bytes_per_cluster_shift);
+			
+			if ((chain.frag_tail_cluster - chain.frag_head_cluster) < chain.frag_offset_cluster){
+				// シーク先は現在のフラグメント中にない。次のフラグメントへ移動する
+				if (chain.next_frag_cluster != INVALID_CLUSTER){
+					result = LoadFragment(chain, chain.next_frag_cluster);
+					if (result != RES_SUCCEEDED){
+						return result;
+					}
+				}
+				else if ((forward == 0) && ((chain.pointer & ((uint64_t)bytes_per_cluster - 1)) == 0)){
+					break;
+				}else{
+					return RES_INTERNAL_ERROR;
+				}
+			}
 		}
+
+		return RES_SUCCEEDED;
 	}
 
 	// クラスタチェインをキャッシュする
@@ -1234,24 +1260,23 @@ namespace mfs{
 
 			if (sector_offset == sectors_per_cluster){
 				sector_offset = 0;
-
+				
 				// 次のクラスタへ移動する
-				if ((chain.frag_tail_cluster - chain.frag_head_cluster) <= chain.frag_offset_cluster){
+				chain.frag_offset_cluster++;
+				if ((chain.frag_tail_cluster - chain.frag_head_cluster) < chain.frag_offset_cluster){
 					// 次のフラグメントのクラスタに移動する
 					if (chain.next_frag_cluster != INVALID_CLUSTER){
-						chain.frag_offset_cluster = 0;
 						result = LoadFragment(chain, chain.next_frag_cluster);
 						if (result != RES_SUCCEEDED){
 							return result;
 						}
 					}
+					else if (length == 0){
+						break;
+					}
 					else{
 						return RES_INTERNAL_ERROR;
 					}
-				}
-				else{
-					// フラグメント内の次のクラスタに移動する
-					chain.frag_offset_cluster++;
 				}
 			}
 		}
@@ -1281,29 +1306,6 @@ namespace mfs{
 		uint32_t sector_offset = ((uint32_t)chain.pointer >> m_BytesPerSectorShift) & (sectors_per_cluster - 1);	// そのクラスタ内で何番目のセクターか
 		uint32_t byte_offset = (uint32_t)chain.pointer & (bytes_per_sector - 1);		// そのセクター内で何バイト目か
 		while (0 < length){
-			if ((chain.frag_tail_cluster - chain.frag_head_cluster) < chain.frag_offset_cluster){
-				chain.frag_offset_cluster = 0;
-				if (chain.next_frag_cluster != INVALID_CLUSTER){
-					// 次のフラグメントのクラスタに移動する
-					result = LoadFragment(chain, chain.next_frag_cluster);
-					if (result != RES_SUCCEEDED){
-						return result;
-					}
-				}
-				else{
-					// 新しいフラグメントを作成する
-					uint32_t count = RShiftCeilingPV32(length, m_BytesPerSectorShift + m_SectorsPerClusterShift);
-					result = ExtendChain(chain, count);
-					if (result != RES_SUCCEEDED){
-						return result;
-					}
-
-
-
-
-				}
-			}
-
 			uint32_t sector = m_ClusterOffset + ((chain.frag_head_cluster + chain.frag_offset_cluster) << m_SectorsPerClusterShift) + sector_offset;
 			uint32_t written_bytes;
 			if (byte_offset == 0){
@@ -1360,22 +1362,21 @@ namespace mfs{
 				sector_offset = 0;
 
 				// 次のクラスタへ移動する
-				if ((chain.frag_tail_cluster - chain.frag_head_cluster) <= chain.frag_offset_cluster){
+				chain.frag_offset_cluster++;
+				if ((chain.frag_tail_cluster - chain.frag_head_cluster) < chain.frag_offset_cluster){
 					// 次のフラグメントのクラスタに移動する
 					if (chain.next_frag_cluster != INVALID_CLUSTER){
-						chain.frag_offset_cluster = 0;
 						result = LoadFragment(chain, chain.next_frag_cluster);
 						if (result != RES_SUCCEEDED){
 							return result;
 						}
 					}
+					else if (length == 0){
+						break;
+					}
 					else{
 						return RES_INTERNAL_ERROR;
 					}
-				}
-				else{
-					// フラグメント内の次のクラスタに移動する
-					chain.frag_offset_cluster++;
 				}
 			}
 		}
@@ -1549,7 +1550,7 @@ namespace mfs{
 				//next_cluster = INVALID_CLUSTER;
 			}
 			else if (chain.flags & FLAG_CONTIGUOUS){
-				uint32_t count = RShiftCeilingPV32(chain.size, m_BytesPerSectorShift + m_SectorsPerClusterShift);
+				uint32_t count = RShiftCeilingPV64to32(chain.size, m_BytesPerSectorShift + m_SectorsPerClusterShift);
 				if ((start_cluster < chain.start_cluster) || ((chain.start_cluster + count) <= start_cluster)){
 					return RES_INTERNAL_ERROR;
 				}

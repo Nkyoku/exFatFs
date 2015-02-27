@@ -132,7 +132,6 @@ namespace mfs{
 		uint32_t frag_head_cluster;			// 現在アクセス中のフラグメントの最初のクラスタ番号
 		uint32_t frag_tail_cluster;			// 現在アクセス中のフラグメントの最後のクラスタ番号
 		uint32_t next_frag_cluster;			// 次のフラグメントの最初のクラスタ番号
-		//uint32_t current_cluster;			// 現在のポインタがあるクラスタ番号
 		uint32_t frag_offset_cluster;		// frag_head_clusterからの現在アクセス中のクラスタ番号
 		uint64_t pointer;					// ポインタ
 		Cache *pcache;						// キャッシュ

@@ -63,12 +63,12 @@ int main(void){
 			delete pdir;
 		}//*/
 
-		/*mfs::FileHandle *pfile;
+		mfs::FileHandle *pfile;
 		pfile = pfs->openFile(L"/test01.bin");
 		if (pfile != nullptr){
 			wprintf(L"size=%lld, pointer=%lld\n", pfile->size(), pfile->tell());
 			FILE *fp;
-			fopen_s(&fp, "trial01.bin", "wb");
+			fopen_s(&fp, "trial.bin", "wb");
 			diskio.suppressDebug(true);
 			bool first = true;
 			while (true){
